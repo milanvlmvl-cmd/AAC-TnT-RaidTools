@@ -114,7 +114,10 @@ local function buildPanel()
         log("Raid manager content was unavailable.")
         return
     end
-    panel = make("emptywidget", "panel", root, 8, 8, 410, 360)
+    local widthOk, width = call(root, "GetWidth")
+    width = widthOk and tonumber(width) or 620
+    call(root, "SetExtent", math.max(width, 620), 720)
+    panel = make("emptywidget", "panel", root, 10, 340, 600, 360)
     if not panel then return end
     make("label", "heading", panel, 10, 8, 390, 22, "TnT Raid Tools")
     local y = 34
