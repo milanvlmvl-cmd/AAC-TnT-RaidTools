@@ -102,6 +102,21 @@ local function roleFromSkillsets(ids)
     return nil
 end
 
+-- Sub-sort rank for the "others": position (1 = first) of the first skillset in
+-- cfg.otherSkillsetOrder that the player has; nil when they have none of them (or are unreadable).
+local function otherRank(ids)
+    if ids == nil then return nil end
+    local names = {}
+    for _, id in ipairs(ids) do
+        local name = skillsetName(id)
+        if name ~= nil then names[name:lower()] = true end
+    end
+    for rank, wanted in ipairs(cfg.otherSkillsetOrder) do
+        if names[wanted:lower()] then return rank end
+    end
+    return nil
+end
+
 -- Role and how it was decided: the explicit class lists first, then the player's skillsets.
 local function decideRole(className, skillIds)
     local fromClass = roleByClass[(className or ""):lower()]
@@ -158,6 +173,7 @@ local function readRoster()
                 name = name, slot = slot, unit = unit,
                 class = knownClass or "unknown",
                 role = role, roleSource = source,
+                rank = otherRank(skillCache[name]),
                 gs = gearCache[name] or 0,
             }
         end

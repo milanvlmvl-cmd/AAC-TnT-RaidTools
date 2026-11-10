@@ -28,7 +28,8 @@ function SortWindow.Create(root)
         "Tanks:  groups " .. groupList(sort.tankGroups),
         "Healers:  groups " .. groupList(sort.healerGroups),
         "Others:  groups " .. groupList(sort.otherGroups),
-        "Sorted by gear score, highest first",
+        "Others: " .. table.concat(sort.otherSkillsetOrder, ", "),
+        "Each sorted by gear score, highest first",
         "Re-checked every " .. math.floor(sort.recheckMs / 1000) .. "s and on join/leave",
     }
     for i, text in ipairs(lines) do

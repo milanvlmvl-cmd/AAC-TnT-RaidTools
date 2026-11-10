@@ -51,11 +51,15 @@ local Constants = {
             death = "Occultism", wild = "Archery", magic = "Sorcery", vocation = "Shadowplay",
             romance = "Songcraft", love = "Vitalism",
         },
+        -- "Others" are sub-sorted by the first skillset in this list that they have (earlier = higher up,
+        -- filling from the first other group), then by gear score. Others with none of them come last.
+        gapBetweenRoles = true, -- leave one empty group between those skillset buckets when the raid has room
+        otherSkillsetOrder = {"Sorcery", "Archery", "Battlerage"},
         tankClasses = {"Skullknight", "Nightcloak", "Dreambreaker", "Abolisher", "Templar", "Hexblade"},
         healerClasses = {"Confessor", "Cleric", "Hierophant", "Templar", "Soothsayer", "Edgewalker"},
     },
     -- Raid sort window on the right side of the raid window
-    sortPanel = {width = 300, height = 166, headerHeight = 36, gap = 4},
+    sortPanel = {width = 300, height = 190, headerHeight = 36, gap = 4},
     -- Invite 1 / Invite 2 windows hung off the left / right edge of the raid window
     invitePanel = {width = 300, height = 162, headerHeight = 36, gap = 4},
 }

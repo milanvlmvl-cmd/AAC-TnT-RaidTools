@@ -19,8 +19,43 @@ local function byGearScore(a, b)
     return a.name < b.name
 end
 
--- members: list of {name, role = "tank" | "healer" | "other", gs = number or nil}
--- cfg: tankGroups, healerGroups, otherGroups, groupSize, maxMembers
+-- Others: by skillset rank first (members without a rank go last), then gear score, then name.
+local function byRankThenGearScore(a, b)
+    local ra, rb = a.rank or math.huge, b.rank or math.huge
+    if ra ~= rb then return ra < rb end
+    return byGearScore(a, b)
+end
+
+-- Lays the (already sorted) others out one skillset bucket per run of groups, leaving one empty
+-- group between buckets. Only done when every bucket fits that way inside the other groups;
+-- returns true when it placed everyone, false (placing nothing) when there is not enough room.
+local function spaceOut(others, slots, cfg, desired)
+    local size = cfg.groupSize
+    local buckets, last = {}, nil
+    for _, m in ipairs(others) do
+        local key = m.rank or math.huge
+        if key ~= last then buckets[#buckets + 1] = {}; last = key end
+        local bucket = buckets[#buckets]
+        bucket[#bucket + 1] = m
+    end
+    local groupsNeeded = math.max(#buckets - 1, 0)
+    for _, bucket in ipairs(buckets) do groupsNeeded = groupsNeeded + math.ceil(#bucket / size) end
+    if groupsNeeded > #cfg.otherGroups then return false end
+    local group = 0 -- groups used so far, counting gaps
+    for _, bucket in ipairs(buckets) do
+        for i, m in ipairs(bucket) do
+            local index = (group + math.floor((i - 1) / size)) * size + (i - 1) % size + 1
+            desired[slots[index]] = m.name
+        end
+        group = group + math.ceil(#bucket / size) + 1
+    end
+    return true
+end
+
+-- members: list of {name, role = "tank" | "healer" | "other", gs = number or nil, rank = number or nil}
+-- rank (lower = earlier) sub-sorts the others before gear score; tanks and healers ignore it.
+-- cfg: tankGroups, healerGroups, otherGroups, groupSize, maxMembers,
+-- gapBetweenRoles (leave an empty group between skillset buckets of the others when there is room)
 -- Returns desired: slot -> member name.
 -- Tanks fill their groups, healers theirs, everyone else (plus any tank/healer overflow) the
 -- other groups; if those run out the remaining free slots are used, so nobody is left unplaced.
@@ -46,9 +81,11 @@ function SortPlan.Build(members, cfg)
     local healerOverflow = fill(healers, slotsOf(cfg.healerGroups, cfg.groupSize))
     for _, m in ipairs(tankOverflow) do others[#others + 1] = m end
     for _, m in ipairs(healerOverflow) do others[#others + 1] = m end
-    table.sort(others, byGearScore)
+    table.sort(others, byRankThenGearScore)
 
-    local rest = fill(others, slotsOf(cfg.otherGroups, cfg.groupSize))
+    local slots = slotsOf(cfg.otherGroups, cfg.groupSize)
+    local spaced = cfg.gapBetweenRoles and spaceOut(others, slots, cfg, desired)
+    local rest = spaced and {} or fill(others, slots)
     local slot = 1
     for _, m in ipairs(rest) do
         while desired[slot] ~= nil do slot = slot + 1 end
