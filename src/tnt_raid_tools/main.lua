@@ -67,11 +67,17 @@ local function addWidget(w)
 end
 
 local function make(kind, id, parent, x, y, width, height, text)
-    local ok, w = call(get(api, "Interface"), "CreateWidget", kind, addonId .. "_" .. id, parent)
+    local ok, w
+    if kind == "textbox" and W_CTRL and type(W_CTRL.CreateEdit) == "function" then
+        ok, w = pcall(W_CTRL.CreateEdit, addonId .. "_" .. id, parent)
+    else
+        local create = get(parent, "CreateChildWidget")
+        if type(create) ~= "function" then return nil end
+        ok, w = pcall(create, parent, kind, addonId .. "_" .. id, 0, true)
+    end
     if not ok or not w then return nil end
     addWidget(w)
     call(w, "SetExtent", width, height)
-    call(w, "RemoveAllAnchors")
     call(w, "AddAnchor", "TOPLEFT", parent, x, y)
     if text then call(w, "SetText", text) end
     call(w, "Show", true)
@@ -101,12 +107,14 @@ end
 
 local function buildPanel()
     widgets = {}
-    local root = get(ADDON, "GetContent") and ADDON.GetContent(UIC.RAID_MANAGER)
-    if not root then
+    local getContent = get(ADDON, "GetContent")
+    local ok, root = false, nil
+    if type(getContent) == "function" then ok, root = pcall(getContent, ADDON, UIC.RAID_MANAGER) end
+    if not ok or not root then
         log("Raid manager content was unavailable.")
         return
     end
-    panel = make("window", "panel", root, 8, 8, 410, 360)
+    panel = make("emptywidget", "panel", root, 8, 8, 410, 360)
     if not panel then return end
     make("label", "heading", panel, 10, 8, 390, 22, "TnT Raid Tools")
     local y = 34
