@@ -1,8 +1,0 @@
-{
-  "id": "tnt_raid_tools",
-  "name": "TnT Raid Tools",
-  "author": "Wasbeerotb",
-  "version": "0.1.0",
-  "runtime": ["main.lua", "logic.lua"],
-  "preserve": []
-}
