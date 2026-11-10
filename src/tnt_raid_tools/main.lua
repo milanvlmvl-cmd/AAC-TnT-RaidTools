@@ -94,20 +94,20 @@ local function cycle(current, values)
     for i, value in ipairs(values) do
         if value == current then return values[i % #values + 1] end
     end
-
-    local function setToggle(button, label, value)
-        if button then
-            call(button, "SetText", label .. (value and ": ON" or ": OFF"))
-        end
-    end
-
-    local function bindText(widget, fn)
-        if not widget then return end
-        for _, event in ipairs({"OnChanged", "OnTextChanged", "OnFocusLost", "OnEnterPressed"}) do
-            pcall(function() call(widget, "SetHandler", event, fn) end)
-        end
-    end
     return values[1]
+end
+
+local function setToggle(button, label, value)
+    if button then
+        call(button, "SetText", label .. (value and ": ON" or ": OFF"))
+    end
+end
+
+local function bindText(widget, fn)
+    if not widget then return end
+    for _, event in ipairs({"OnChanged", "OnTextChanged", "OnFocusLost", "OnEnterPressed"}) do
+        pcall(function() call(widget, "SetHandler", event, fn) end)
+    end
 end
 
 local channels = {"all", "nation", "faction", "guild", "whisper"}

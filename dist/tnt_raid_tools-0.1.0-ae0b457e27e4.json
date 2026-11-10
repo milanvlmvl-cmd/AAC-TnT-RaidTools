@@ -9,14 +9,14 @@
     "addon.json": "af7cc7e68dd9e5a38c299a8c2dfdfa3a7397603c1a2e5c089e60bda5ee5173a8",
     "requirements-dev.txt": "c355c313ec4744320b1e0d22e7e70465d899a48e8c62293578ddff95d0672c6b",
     "src/tnt_raid_tools/logic.lua": "c7f665b048213e841a38915e7bba9309a853be453dbb737c6cf6615affe59e47",
-    "src/tnt_raid_tools/main.lua": "7725bd1f5ac8e38e2b7f7bd14e6730bd49d3ae14fa5da1236601f0b531a0a8b7",
+    "src/tnt_raid_tools/main.lua": "4d25ff6d092568425b747ed9c00e9736b019bc75394a1be72f8582ebf20be625",
     "tests/spec.lua": "b69ae11f72d11f94bf37de610cd6a040e7d90c98d0694b75e21382dfe21365f5",
     "tools/build.py": "5ca832318d6c47c8aeba6d1be7a3cf3d36381c3e07400e0e865ce042abfde677",
     "tools/check.py": "cef9babb18be000dc92e04e04ea435cc79c0c7c1841d9bf5883121ea0c5bfbc9",
     "tools/common.py": "7d5d595edc33473e5f8a77f263981e13addff01ffd8855233a26c6a2187eaa3d"
   },
   "installed": false,
-  "source_sha256": "01e0431aebaf3884c6ccd6596a32db128af4b27526ac68f2928d602156b69ae8",
+  "source_sha256": "ae0b457e27e4586f87664267f9e38b028a2305e432fdf02dc51953148f954a16",
   "version": "0.1.0",
-  "zip_sha256": "0c6f55a3881b7262c16223c38faea84020ff55f16bbb6ad96b6ca2d64493da1b"
+  "zip_sha256": "1960438deac74ecbecab0981687377dc4cef09d1630f6e405a65c01210191c6f"
 }
