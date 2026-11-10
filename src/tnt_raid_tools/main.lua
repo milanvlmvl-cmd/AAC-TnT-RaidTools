@@ -17,8 +17,8 @@ end
 local function defaults()
     return {
         phrases = {
-            {phrase = "x", channel = "all", match = "equals", enabled = false, whitelistEnabled = false, whitelist = {}, blacklist = {}},
-            {phrase = "x2", channel = "all", match = "equals", enabled = false, whitelistEnabled = false, whitelist = {}, blacklist = {}}
+            {phrase = "x", channel = "all", match = "equals", enabled = false, whitelistEnabled = false, blacklistEnabled = false, whitelist = {}, blacklist = {}},
+            {phrase = "x2", channel = "all", match = "equals", enabled = false, whitelistEnabled = false, blacklistEnabled = false, whitelist = {}, blacklist = {}}
         },
         lead = {phrase = "lead", channel = "all", enabled = false, whitelistEnabled = false, whitelist = {}}
     }
@@ -36,6 +36,7 @@ local function loadSettings()
         settings.phrases[i].phrase = settings.phrases[i].phrase or base.phrases[i].phrase
         settings.phrases[i].channel = settings.phrases[i].channel or base.phrases[i].channel
         settings.phrases[i].match = settings.phrases[i].match or base.phrases[i].match
+        settings.phrases[i].blacklistEnabled = settings.phrases[i].blacklistEnabled == true
         settings.phrases[i].whitelist = settings.phrases[i].whitelist or {}
         settings.phrases[i].blacklist = settings.phrases[i].blacklist or {}
     end
@@ -93,6 +94,19 @@ local function cycle(current, values)
     for i, value in ipairs(values) do
         if value == current then return values[i % #values + 1] end
     end
+
+    local function setToggle(button, label, value)
+        if button then
+            call(button, "SetText", label .. (value and ": ON" or ": OFF"))
+        end
+    end
+
+    local function bindText(widget, fn)
+        if not widget then return end
+        for _, event in ipairs({"OnChanged", "OnTextChanged", "OnFocusLost", "OnEnterPressed"}) do
+            pcall(function() call(widget, "SetHandler", event, fn) end)
+        end
+    end
     return values[1]
 end
 
@@ -119,21 +133,21 @@ local function buildPanel()
     call(root, "SetExtent", math.max(width, 620), 720)
     panel = make("emptywidget", "panel", root, 10, 340, 600, 360)
     if not panel then return end
-    make("label", "heading", panel, 10, 8, 390, 22, "TnT Raid Tools")
+    make("label", "heading", panel, 10, 8, 580, 24, "TnT RAID TOOLS  |  click blue controls to change settings")
     local y = 34
     for index = 1, 2 do
         local config = settings.phrases[index]
-        make("label", "p" .. index .. "_label", panel, 10, y, 80, 22, "Invite " .. index)
-        local phrase = make("textbox", "p" .. index .. "_phrase", panel, 92, y, 110, 22, config.phrase)
-        local channel = make("button", "p" .. index .. "_channel", panel, 208, y, 82, 22, config.channel)
-        local match = make("button", "p" .. index .. "_match", panel, 296, y, 82, 22, config.match)
-        local enable = make("checkbutton", "p" .. index .. "_enable", panel, 10, y + 26, 90, 22, "Enabled")
-        local allow = make("checkbutton", "p" .. index .. "_allow", panel, 104, y + 26, 130, 22, "Whitelist only")
-        local white = make("textbox", "p" .. index .. "_white", panel, 10, y + 52, 188, 22, table.concat(config.whitelist, ", "))
-        local black = make("textbox", "p" .. index .. "_black", panel, 204, y + 52, 174, 22, table.concat(config.blacklist, ", "))
-        local invite = make("button", "p" .. index .. "_invite", panel, 10, y + 78, 110, 22, "Invite whitelist")
-        if enable then call(enable, "SetChecked", config.enabled) end
-        if allow then call(allow, "SetChecked", config.whitelistEnabled) end
+        make("label", "p" .. index .. "_label", panel, 10, y, 70, 22, "INVITE " .. index)
+        local phrase = make("textbox", "p" .. index .. "_phrase", panel, 82, y, 150, 22, config.phrase)
+        local channel = make("button", "p" .. index .. "_channel", panel, 240, y, 100, 22, string.upper(config.channel))
+        local match = make("button", "p" .. index .. "_match", panel, 348, y, 100, 22, string.upper(config.match))
+        local enable = make("button", "p" .. index .. "_enable", panel, 10, y + 27, 105, 22)
+        local allow = make("button", "p" .. index .. "_allow", panel, 121, y + 27, 125, 22)
+        local block = make("button", "p" .. index .. "_block", panel, 252, y + 27, 125, 22)
+        local invite = make("button", "p" .. index .. "_invite", panel, 383, y + 27, 125, 22, "INVITE LIST")
+        setToggle(enable, "ACTIVE", config.enabled)
+        setToggle(allow, "WHITELIST", config.whitelistEnabled)
+        setToggle(block, "BLACKLIST", config.blacklistEnabled)
         call(channel, "SetHandler", "OnClick", function()
             config.channel = cycle(config.channel, channels); call(channel, "SetText", config.channel); saveSettings()
         end)
@@ -141,43 +155,44 @@ local function buildPanel()
             config.match = cycle(config.match, matches); call(match, "SetText", config.match); saveSettings()
         end)
         call(enable, "SetHandler", "OnClick", function()
-            local ok, value = call(enable, "IsChecked"); config.enabled = ok and value == true; saveSettings()
+            config.enabled = not config.enabled; setToggle(enable, "ACTIVE", config.enabled); saveSettings()
         end)
         call(allow, "SetHandler", "OnClick", function()
-            local ok, value = call(allow, "IsChecked"); config.whitelistEnabled = ok and value == true; saveSettings()
+            config.whitelistEnabled = not config.whitelistEnabled; setToggle(allow, "WHITELIST", config.whitelistEnabled); saveSettings()
         end)
-        call(phrase, "SetHandler", "OnChanged", function()
-            config.phrase = textValue(phrase); saveSettings()
+        call(block, "SetHandler", "OnClick", function()
+            config.blacklistEnabled = not config.blacklistEnabled; setToggle(block, "BLACKLIST", config.blacklistEnabled); saveSettings()
         end)
-        call(white, "SetHandler", "OnChanged", function()
-            config.whitelist = Logic.splitNames(textValue(white)); saveSettings()
-        end)
-        call(black, "SetHandler", "OnChanged", function()
-            config.blacklist = Logic.splitNames(textValue(black)); saveSettings()
-        end)
+        local white = make("textbox", "p" .. index .. "_white", panel, 10, y + 55, 240, 22, table.concat(config.whitelist, ", "))
+        local black = make("textbox", "p" .. index .. "_black", panel, 252, y + 55, 256, 22, table.concat(config.blacklist, ", "))
+        bindText(phrase, function() config.phrase = textValue(phrase); saveSettings() end)
+        bindText(white, function() config.whitelist = Logic.splitNames(textValue(white)); saveSettings() end)
+        bindText(black, function() config.blacklist = Logic.splitNames(textValue(black)); saveSettings() end)
         call(invite, "SetHandler", "OnClick", function() inviteWhitelist(config) end)
-        y = y + 112
+        make("label", "p" .. index .. "_hint", panel, 10, y + 80, 500, 18, "Whitelist names                         Blacklist names (toggle above)")
+        y = y + 105
     end
     local lead = settings.lead
-    make("label", "lead_label", panel, 10, y, 80, 22, "Lead pass")
-    local phrase = make("textbox", "lead_phrase", panel, 92, y, 110, 22, lead.phrase)
-    local channel = make("button", "lead_channel", panel, 208, y, 82, 22, lead.channel)
-    local enable = make("checkbutton", "lead_enable", panel, 10, y + 26, 90, 22, "Enabled")
-    local allow = make("checkbutton", "lead_allow", panel, 104, y + 26, 130, 22, "Whitelist only")
-    local white = make("textbox", "lead_white", panel, 10, y + 52, 368, 22, table.concat(lead.whitelist, ", "))
-    if enable then call(enable, "SetChecked", lead.enabled) end
-    if allow then call(allow, "SetChecked", lead.whitelistEnabled) end
+    make("label", "lead_label", panel, 10, y, 90, 22, "LEAD PASS")
+    local phrase = make("textbox", "lead_phrase", panel, 102, y, 150, 22, lead.phrase)
+    local channel = make("button", "lead_channel", panel, 260, y, 100, 22, string.upper(lead.channel))
+    local enable = make("button", "lead_enable", panel, 10, y + 27, 105, 22)
+    local allow = make("button", "lead_allow", panel, 121, y + 27, 125, 22)
+    setToggle(enable, "ACTIVE", lead.enabled)
+    setToggle(allow, "WHITELIST", lead.whitelistEnabled)
+    local white = make("textbox", "lead_white", panel, 260, y + 27, 248, 22, table.concat(lead.whitelist, ", "))
+    make("label", "lead_hint", panel, 260, y + 52, 248, 18, "Allowed names, comma-separated")
     call(channel, "SetHandler", "OnClick", function()
         lead.channel = cycle(lead.channel, channels); call(channel, "SetText", lead.channel); saveSettings()
     end)
     call(enable, "SetHandler", "OnClick", function()
-        local ok, value = call(enable, "IsChecked"); lead.enabled = ok and value == true; saveSettings()
+        lead.enabled = not lead.enabled; setToggle(enable, "ACTIVE", lead.enabled); saveSettings()
     end)
     call(allow, "SetHandler", "OnClick", function()
-        local ok, value = call(allow, "IsChecked"); lead.whitelistEnabled = ok and value == true; saveSettings()
+        lead.whitelistEnabled = not lead.whitelistEnabled; setToggle(allow, "WHITELIST", lead.whitelistEnabled); saveSettings()
     end)
-    call(phrase, "SetHandler", "OnChanged", function() lead.phrase = textValue(phrase); saveSettings() end)
-    call(white, "SetHandler", "OnChanged", function() lead.whitelist = Logic.splitNames(textValue(white)); saveSettings() end)
+    bindText(phrase, function() lead.phrase = textValue(phrase); saveSettings() end)
+    bindText(white, function() lead.whitelist = Logic.splitNames(textValue(white)); saveSettings() end)
 end
 
 local function onChat(channelId, _, _, speakerName, message)

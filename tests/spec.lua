@@ -31,6 +31,15 @@ test("invite eligibility", function()
     equal(Logic.eligible({name = "Alice", text = "x-up please"}, 7, config, {}, white), false)
 end)
 
+test("blacklist is independently toggleable", function()
+    local config = {enabled = true, channel = "all", match = "equals", phrase = "x-up",
+        whitelistEnabled = false, blacklistEnabled = false}
+    local black = Logic.lookup({"Alice"})
+    equal(Logic.eligible({name = "Alice", text = "x-up"}, 7, config, black, {}), true)
+    config.blacklistEnabled = true
+    equal(Logic.eligible({name = "Alice", text = "x-up"}, 7, config, black, {}), false)
+end)
+
 test("lead transfer uses team index", function()
     local called
     local team = {

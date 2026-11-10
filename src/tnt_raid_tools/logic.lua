@@ -66,7 +66,7 @@ end
 function M.eligible(message, channelId, config, blacklist, whitelist)
     if not config.enabled or not M.channelAllowed(channelId, config.channel) then return false end
     local nameKey = M.normalizeName(message.name)
-    if nameKey == "" or blacklist[nameKey] then return false end
+    if nameKey == "" or (config.blacklistEnabled and blacklist[nameKey]) then return false end
     if config.whitelistEnabled and not whitelist[nameKey] then return false end
     return M.matchesPhrase(message.text, config.phrase, config.match)
 end
