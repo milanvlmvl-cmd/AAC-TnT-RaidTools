@@ -10,6 +10,22 @@ local Authority = {}
 
 local MAX_SLOTS = 50
 local lastAllowed = nil
+local listeners = {}
+
+-- Call fn(allowed) whenever the state flips (and on the first check). Cleared by Authority.Reset.
+function Authority.Subscribe(fn)
+    listeners[#listeners + 1] = fn
+end
+
+function Authority.Reset()
+    listeners = {}
+    lastAllowed = nil
+end
+
+-- false only when a check has found that you may not manage the raid (not lead, raid of 2+).
+function Authority.IsPaused()
+    return lastAllowed == false
+end
 
 local function call(fn)
     local ok, value = pcall(fn)
@@ -41,6 +57,7 @@ function Authority.CanManage()
     if allowed ~= lastAllowed then
         local first = lastAllowed == nil
         lastAllowed = allowed
+        for _, fn in ipairs(listeners) do pcall(fn, allowed) end
         if first and allowed then return allowed end -- nothing to report on the first, normal, check
         local text = allowed
             and ("raid tools active (" .. (lead and "you are lead" or "not in a raid") .. ")")

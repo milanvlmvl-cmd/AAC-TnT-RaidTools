@@ -5,8 +5,8 @@ local Constants = {
     addonName = "AAC-TnT-RaidTools", -- addon folder name, also the GetSettings id
     folderPath = api.baseDir .. "/AAC-TnT-RaidTools/",
     displayName = "TnT Raid Tools",
-    version = "0.1.2",
-    inviteSlots = 2,
+    version = "0.1.3",
+    legacyInviteSlots = 2, -- the fixed Invite1* / Invite2* keys older versions saved (migrated into the Invites list)
     -- Chat channel id each selection matches; "*" matches any channel id.
     channels = {all = "*", nation = 6, faction = 14, guild = 7, whisper = -3, raid = 5},
     channelOrder = {"all", "nation", "faction", "guild", "whisper"}, -- order the button cycles through
@@ -68,8 +68,12 @@ local Constants = {
     },
     -- Raid sort window on the right side of the raid window
     sortPanel = {width = 300, height = 222, headerHeight = 36, gap = 4},
-    -- Invite 1 / Invite 2 windows hung off the left / right edge of the raid window
-    invitePanel = {width = 300, height = 162, headerHeight = 36, gap = 4},
+    -- Invite list window on the left side of the raid window: a header, then a scrolling stack of invite cards.
+    -- A card is a header row (collapse checkbox, title, X) plus a body that is hidden when collapsed.
+    invitePanel = {
+        width = 300, height = 420, headerHeight = 30, gap = 4,
+        cardHeaderHeight = 36, cardBodyHeight = 126, cardGap = 4, scrollWidth = 18,
+    },
 }
 
 return Constants

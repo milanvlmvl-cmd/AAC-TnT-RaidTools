@@ -14,18 +14,17 @@ function RaidTools.Log(text)
 end
 
 -- Build the config table Logic.eligible expects from the flat settings keys.
-local function inviteConfig(index)
-    local key = "Invite" .. index
+local function inviteConfig(invite)
     return {
-        enabled = settings.Get(key .. "Enabled"),
-        channel = settings.Get(key .. "Channel"),
-        match = settings.Get(key .. "Match"),
-        phrase = settings.Get(key .. "Phrase"),
+        enabled = true, -- an invite is active for as long as it exists
+        channel = invite.Channel,
+        match = invite.Match,
+        phrase = invite.Phrase,
         -- the name lists are shared; each invite picks public, private or disabled for each
-        whitelistEnabled = settings.ListMode("Whitelist", index) ~= "disabled",
-        blacklistEnabled = settings.ListMode("Blacklist", index) ~= "disabled",
-        whitelist = Logic.lookup(settings.Get(settings.ActiveListKey("Whitelist", index))),
-        blacklist = Logic.lookup(settings.Get(settings.ActiveListKey("Blacklist", index))),
+        whitelistEnabled = invite.WhitelistMode ~= "disabled",
+        blacklistEnabled = invite.BlacklistMode ~= "disabled",
+        whitelist = Logic.lookup(settings.Get(settings.ActiveListKey("Whitelist", invite.WhitelistMode))),
+        blacklist = Logic.lookup(settings.Get(settings.ActiveListKey("Blacklist", invite.BlacklistMode))),
     }
 end
 
@@ -40,10 +39,17 @@ end
 
 local function handleInvites(channelId, speakerName, message)
     local debugging = settings.Get("DebugChat")
-    for index = 1, constants.inviteSlots do
-        -- cheap check first: every chat line in every channel passes through here
-        if settings.Get("Invite" .. index .. "Enabled") then
-            local config = inviteConfig(index)
+    if not settings.Get("InvitesEnabled") then
+        if debugging then debug("invites skipped: global invites switch is off") end
+        return false
+    end
+    for index, invite in ipairs(settings.Get("Invites")) do -- stored list, read only (normalised on load / by the editor)
+        -- cheap check first: every chat line in every channel passes through here, so unless debugging
+        -- only invites whose phrase matches get the full check (which writes a trace line)
+        if invite.Active == false then
+            if debugging then debug("invite " .. index .. " skipped: switched off (Zzz)") end
+        elseif debugging or Logic.matchesPhrase(message, invite.Phrase, invite.Match) then
+            local config = inviteConfig(invite)
             local ok, reason = Logic.check({name = speakerName, text = message}, channelId, config, config.blacklist, config.whitelist)
             if ok then
                 if not Authority.CanManage() then
@@ -60,8 +66,6 @@ local function handleInvites(channelId, speakerName, message)
             elseif debugging then
                 debug("invite " .. index .. " skipped: " .. reason)
             end
-        elseif debugging then
-            debug("invite " .. index .. " skipped: Enabled checkbox is off")
         end
     end
     return false

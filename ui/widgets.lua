@@ -134,6 +134,98 @@ function Widgets.Checkbox(id, parent, text, x, y, checked, onChange)
     return box
 end
 
+-- Dark overlay with centred lines of text, drawn over `parent`. Returns
+-- {SetLines({text, ...}), Show(visible), Raise()}; at most maxLines lines. Hidden until Show(true).
+function Widgets.Overlay(id, parent, width, height, maxLines)
+    local overlay = Widgets.Make("emptywidget", id, parent, 0, 0, width, height)
+    local shade = overlay:CreateColorDrawable(0.1, 0.07, 0.03, 0.93, "artwork")
+    shade:AddAnchor("TOPLEFT", overlay, 0, 0)
+    shade:SetExtent(width, height)
+    shade:Show(true)
+    local labels = {}
+    for i = 1, maxLines do
+        local label = Widgets.Make("label", id .. "_text" .. i, overlay, 10, 0, width - 20, 22, "")
+        label.style:SetColor(1, 0.95, 0.8, 1)
+        pcall(function() label.style:SetAlign(ALIGN.CENTER) end)
+        labels[i] = label
+    end
+    pcall(function() overlay:EnablePick(true) end) -- swallow clicks so what is underneath is inert
+
+    local self = {}
+    function self.SetLines(lines)
+        local top = height / 2 - (#lines * 24) / 2
+        for i, label in ipairs(labels) do
+            local text = lines[i]
+            label:Show(text ~= nil)
+            if text ~= nil then
+                label:SetText(text)
+                label:RemoveAllAnchors()
+                label:AddAnchor("TOPLEFT", overlay, 10, top + (i - 1) * 24)
+            end
+        end
+    end
+    function self.Show(visible)
+        overlay:Show(visible)
+        if visible then overlay:Raise() end
+    end
+    function self.Raise() overlay:Raise() end
+    overlay:Show(false)
+    return self
+end
+
+-- Invisible button over an area (a label that should react to clicks). Returns the button.
+function Widgets.ClickArea(id, parent, x, y, width, height, onClick)
+    local button = parent:CreateChildWidget("button", idPrefix .. "_" .. id, 0, true)
+    button:AddAnchor("TOPLEFT", parent, x, y)
+    button:SetExtent(width, height)
+    if button.SetSounds then button:SetSounds("auction_put_up") end
+    button:Show(true)
+    button:Enable(true)
+    created[#created + 1] = button
+    button:SetHandler("OnClick", onClick)
+    button:Raise()
+    return button
+end
+
+-- Clickable picture: an image drawable with a transparent button on top (same trick as the checkbox).
+-- `texture` is a file name inside the images folder, e.g. "add.png". Returns {SetTexture(name), Show(visible)}.
+function Widgets.IconButton(id, parent, texture, x, y, size, onClick)
+    local fullId = idPrefix .. "_" .. id
+    local icon = {}
+    -- the picture and the button live in a small holder widget, so hiding the icon is one Show() on a
+    -- widget (hiding a bare drawable or a button on someone else's window is not reliable)
+    local holder = parent:CreateChildWidget("emptywidget", fullId .. "_holder", 0, true)
+    holder:AddAnchor("TOPLEFT", parent, x, y)
+    holder:SetExtent(size, size)
+    holder:Show(true)
+    created[#created + 1] = holder
+
+    local picture = holder:CreateImageDrawable(fullId .. "_img", "artwork")
+    picture:AddAnchor("TOPLEFT", holder, 0, 0)
+    picture:SetExtent(size, size)
+    picture:SetTexture(constants.folderPath .. "images/" .. texture)
+    picture:Show(true)
+
+    local button = holder:CreateChildWidget("button", fullId .. "_btn", 0, true)
+    button:AddAnchor("TOPLEFT", holder, 0, 0)
+    button:SetExtent(size, size)
+    if button.SetSounds then button:SetSounds("auction_put_up") end
+    button:Show(true)
+    button:Enable(true)
+    created[#created + 1] = button
+    button:SetHandler("OnClick", onClick)
+    button:Raise()
+    holder:Raise() -- above whatever else the parent already holds
+
+    function icon.SetTexture(name)
+        picture:SetTexture(constants.folderPath .. "images/" .. name)
+    end
+    function icon.Show(visible)
+        holder:Show(visible)
+    end
+    return icon
+end
+
 -- Checkbox bound to a boolean setting.
 function Widgets.SettingCheckbox(id, parent, text, x, y, key)
     return Widgets.Checkbox(id, parent, text, x, y, settings.Get(key), function(checked)
@@ -146,6 +238,8 @@ function Widgets.FreeAll()
     for i = #created, 1, -1 do
         local w = created[i]
         w:ReleaseHandler("OnClick")
+        pcall(function() w:ReleaseHandler("OnWheelUp") end)
+        pcall(function() w:ReleaseHandler("OnWheelDown") end)
         for _, event in ipairs(textEvents) do
             w:ReleaseHandler(event)
         end

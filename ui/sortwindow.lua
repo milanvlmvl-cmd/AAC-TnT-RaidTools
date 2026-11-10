@@ -2,6 +2,7 @@ local constants = require("AAC-TnT-RaidTools/core/constants")
 local settings = require("AAC-TnT-RaidTools/core/settings")
 local Widgets = require("AAC-TnT-RaidTools/ui/widgets")
 local raidsort = require("AAC-TnT-RaidTools/features/raidsort")
+local Authority = require("AAC-TnT-RaidTools/core/authority")
 
 -- Raid sort window on the right side of the raid window. Like the invite windows it collapses to
 -- a header bar (title + Enabled checkbox) while the feature is off.
@@ -64,11 +65,33 @@ function SortWindow.Create(root)
     end)
     applyStyle(style)
 
+    -- Messages over the expanded window: the global switch is off (the sort does not run then either),
+    -- and/or you are not raid lead (the sort is paused). Both can show at once.
+    -- covers the whole window, header included
+    local notice = Widgets.Overlay("sort_notice", window, dims.width, dims.height, 4)
+    local sortEnabled = settings.Get("RaidSortEnabled")
+    local function refreshNotice()
+        local lines = {}
+        if not settings.Get("InvitesEnabled") then
+            lines[#lines + 1] = "RAID SORT DISABLED"
+            lines[#lines + 1] = "while Global enabled is toggled off"
+        end
+        if Authority.IsPaused() then
+            lines[#lines + 1] = "RAID SORT PAUSED"
+            lines[#lines + 1] = "you are not raid lead"
+        end
+        notice.SetLines(lines)
+        notice.Show(sortEnabled and #lines > 0)
+    end
+    Authority.Subscribe(function() refreshNotice() end)
+
     local function applyEnabled(enabled)
+        sortEnabled = enabled
         local height = enabled and dims.height or dims.headerHeight
         window:SetExtent(dims.width, height)
         background:SetExtent(dims.width, height)
         body:Show(enabled)
+        refreshNotice()
     end
 
     Widgets.Make("label", "sort_title", window, x, 8, 150, 22, "RAID SORT")
@@ -79,7 +102,8 @@ function SortWindow.Create(root)
         applyEnabled(checked)
     end)
     applyEnabled(settings.Get("RaidSortEnabled"))
-    return window
+    pcall(Authority.CanManage) -- first look at the lead state so the notice is right from the start
+    return {window = window, RefreshNotice = refreshNotice}
 end
 
 return SortWindow

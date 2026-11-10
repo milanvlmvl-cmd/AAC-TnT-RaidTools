@@ -476,6 +476,11 @@ local function onUpdate(dt)
     if not live then return end
     clock = clock + dt
     if not settings.Get("RaidSortEnabled") then return end
+    if not settings.Get("InvitesEnabled") then
+        -- the global switch is off: no sorting, and nothing half sent when it comes back on
+        queued, pending = nil, nil
+        return
+    end
     timer = timer - dt
     if timer > 0 then return end
     if queued ~= nil then

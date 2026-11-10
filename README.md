@@ -8,7 +8,8 @@ Raid invite phrases and lead handoff, embedded in the raid manager panel.
 - `core/constants.lua` - addon name, channel and match lists, panel sizes
 - `core/settings.lua` - flat-key settings (`Get` / `Update` / `Is`), same pattern as WorldSatNav
 - `features/raidtools.lua` - chat handling, invites, lead pass
-- `ui/panel.lua` - Invite 1/2 windows beside the raid window, main panel window below it (raid window is never resized)
+- `ui/panel.lua` - main panel window below the raid window (raid window is never resized)
+- `ui/invitelist.lua` - scrolling list of invites left of the raid window; "+" in the raid panel's top left adds one, X deletes, the arrow icon collapses / expands it
 - `ui/listpanel.lua` - add/remove editor for a name array (blacklist, whitelist)
 - `ui/widgets.lua` - widget factory, checkbox (ported from WorldSatNav), cleanup
 - `features/raidsort.lua` - raid sort: tanks / healers / others into raid groups by gear score (see `constants.raidSort`)
@@ -20,8 +21,8 @@ Raid invite phrases and lead handoff, embedded in the raid manager panel.
 
 ## Settings
 
-Stored under the addon folder name (`AAC-TnT-RaidTools`). Keys: `Invite1*`, `Invite2*`, `Lead*`.
-Each invite has `Invite<N>Enabled`, `Invite<N>WhitelistEnabled`, `Invite<N>BlacklistEnabled`, `Invite<N>Phrase/Channel/Match`.
+Stored under the addon folder name (`AAC-TnT-RaidTools`). Keys: `Invites`, `Lead*`.
+`InvitesEnabled` is the global on/off for all invites. Invites is a list of `{Phrase, Channel, Match, BlacklistMode, WhitelistMode, Collapsed}` (no limit; older `Invite1*` / `Invite2*` settings are migrated, enabled ones only).
 Name lists are arrays shared by both invites, one per raid type: `BlacklistPublic`, `BlacklistPrivate`, `WhitelistPublic`, `WhitelistPrivate`.
-`Invite<N>BlacklistMode` / `Invite<N>WhitelistMode` (`public` | `private`) pick which shared list each invite uses.
+`BlacklistMode` / `WhitelistMode` (`public` | `private` | `disabled`) pick which shared list each invite uses.
 `LeadWhitelist` is a comma-separated string.

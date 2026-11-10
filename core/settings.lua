@@ -13,22 +13,40 @@ local function copyList(list)
     return copy
 end
 
+local function contains(list, value)
+    for _, item in ipairs(list) do
+        if item == value then return true end
+    end
+    return false
+end
+
+-- A new invite with the default values.
+function Settings.NewInvite()
+    return {Phrase = "x", Channel = "all", Match = "equals", BlacklistMode = "disabled", WhitelistMode = "disabled", Collapsed = false, Active = true}
+end
+
+-- Fill missing or invalid fields of an invite (from the file, or migrated) with the defaults.
+local function normalizeInvite(entry)
+    local invite = Settings.NewInvite()
+    if type(entry) == "table" then
+        if type(entry.Phrase) == "string" then invite.Phrase = entry.Phrase end
+        if contains(constants.channelOrder, entry.Channel) then invite.Channel = entry.Channel end
+        if contains(constants.matches, entry.Match) then invite.Match = entry.Match end
+        if contains(constants.listModes, entry.BlacklistMode) then invite.BlacklistMode = entry.BlacklistMode end
+        if contains(constants.listModes, entry.WhitelistMode) then invite.WhitelistMode = entry.WhitelistMode end
+        invite.Collapsed = entry.Collapsed == true
+        invite.Active = entry.Active ~= false -- missing (older saves) means active
+    end
+    return invite
+end
+
 -- Flat keys, same pattern as WorldSatNav. Name lists are arrays; all lists are arrays.
 local defaultSettings = {
-    -- Invite phrases (1..inviteSlots). Each has its own on/off for the shared lists below.
-    Invite1Enabled = false,
-    Invite1Phrase = "x",
-    Invite1Channel = "all",
-    Invite1Match = "equals",
-    Invite1BlacklistMode = "disabled", -- "public" | "private" | "disabled": which shared list this invite checks (none when disabled)
-    Invite1WhitelistMode = "disabled",
-
-    Invite2Enabled = false,
-    Invite2Phrase = "x2",
-    Invite2Channel = "all",
-    Invite2Match = "equals",
-    Invite2BlacklistMode = "disabled",
-    Invite2WhitelistMode = "disabled",
+    -- Invite phrases: any number, each {Phrase, Channel, Match, BlacklistMode, WhitelistMode, Collapsed, Active}.
+    -- Modes are "public" | "private" | "disabled": which shared list the invite checks (none when disabled).
+    -- Always read a copy with GetInvites and write the whole list back with SetInvites.
+    Invites = {},
+    InvitesEnabled = true, -- global switch: when off, no invite sends anything (the list itself is kept)
 
     -- Name lists (arrays), shared by both invites. One list per raid type.
     BlacklistPublic = {},
@@ -77,15 +95,23 @@ function Settings.Get(key)
     return value
 end
 
--- Mode of an invite's blacklist or whitelist: "public", "private" or "disabled".
-function Settings.ListMode(kind, inviteIndex)
-    return Settings.Get("Invite" .. inviteIndex .. kind .. "Mode")
+-- Copy of the invite list (safe to edit), and writing a whole edited list back.
+function Settings.GetInvites()
+    local list = {}
+    local stored = Settings.Get("Invites")
+    for i, invite in ipairs(type(stored) == "table" and stored or {}) do
+        list[i] = normalizeInvite(invite)
+    end
+    return list
 end
 
--- Setting key of the list an invite uses for kind "Blacklist" or "Whitelist", chosen by that
--- invite's own mode. nil when the mode is "disabled" (the list is not used).
-function Settings.ActiveListKey(kind, inviteIndex)
-    local mode = Settings.ListMode(kind, inviteIndex)
+function Settings.SetInvites(list)
+    return Settings.Update("Invites", list)
+end
+
+-- Setting key of the list an invite uses for kind "Blacklist" or "Whitelist", given that invite's
+-- mode ("public", "private" or "disabled"). nil when the mode is "disabled" (the list is not used).
+function Settings.ActiveListKey(kind, mode)
     if mode == "private" then return kind .. "Private" end
     if mode == "public" then return kind .. "Public" end
     return nil
@@ -115,6 +141,7 @@ function Settings.LoadSettings()
     if type(loaded) ~= "table" then
         loaded = {}
     end
+    local hadInvites = type(loaded.Invites) == "table"
     -- Fill missing keys in memory only. Real values persist on the first Update(),
     -- so a failed load can never overwrite a user's file with defaults.
     for k, v in pairs(defaultSettings) do
@@ -127,7 +154,7 @@ function Settings.LoadSettings()
     end
     -- the per-invite Blacklist/Whitelist "Enabled" checkboxes became a "disabled" mode:
     -- an old unchecked box turns the mode to disabled, then the stale key is dropped
-    for index = 1, constants.inviteSlots do
+    for index = 1, constants.legacyInviteSlots do
         for _, kind in ipairs({"Blacklist", "Whitelist"}) do
             local oldKey = "Invite" .. index .. kind .. "Enabled"
             if loaded[oldKey] ~= nil then
@@ -136,6 +163,26 @@ function Settings.LoadSettings()
             end
         end
     end
+    -- the fixed Invite1* / Invite2* settings became the Invites list: carry over the ones that were
+    -- enabled (an invite is now always active), then drop the old keys
+    if not hadInvites then
+        loaded.Invites = {}
+        for index = 1, constants.legacyInviteSlots do
+            local prefix = "Invite" .. index
+            if loaded[prefix .. "Enabled"] == true then
+                loaded.Invites[#loaded.Invites + 1] = {
+                    Phrase = loaded[prefix .. "Phrase"], Channel = loaded[prefix .. "Channel"], Match = loaded[prefix .. "Match"],
+                    BlacklistMode = loaded[prefix .. "BlacklistMode"], WhitelistMode = loaded[prefix .. "WhitelistMode"],
+                }
+            end
+        end
+    end
+    for index = 1, constants.legacyInviteSlots do
+        for _, suffix in ipairs({"Enabled", "Phrase", "Channel", "Match", "BlacklistMode", "WhitelistMode"}) do
+            loaded["Invite" .. index .. suffix] = nil
+        end
+    end
+    for i, invite in ipairs(loaded.Invites) do loaded.Invites[i] = normalizeInvite(invite) end
     -- lead pass no longer offers "all"; move an old saved value to the default
     local validLeadChannel = false
     for _, name in ipairs(constants.leadChannelOrder) do
