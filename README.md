@@ -13,7 +13,8 @@ Raid invite phrases and lead handoff, embedded in the raid manager panel.
 - `ui/widgets.lua` - widget factory, checkbox (ported from WorldSatNav), cleanup
 - `features/raidsort.lua` - raid sort: tanks / healers / others into raid groups by gear score (see `constants.raidSort`)
 - `core/sortplan.lua` - pure layout planning for the raid sort
-- `ui/sortwindow.lua` - raid sort window on the right of the raid window
+- `core/authority.lua` - raid lead check; auto invites and raid sort pause when you are not lead in a raid of 2+
+- `ui/sortwindow.lua` - raid sort window on the right of the raid window (Sort style toggle: 1 = role groups, 2 = 1 tank / 3 others / 1 healer per group)
 - `logic.lua` - pure matching helpers
 - `api.lua`, `API_DOCUMENTATION.md` - game API reference
 

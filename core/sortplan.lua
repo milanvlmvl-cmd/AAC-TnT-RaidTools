@@ -94,6 +94,53 @@ function SortPlan.Build(members, cfg)
     return desired
 end
 
+-- Style 2: every group is 1 tank, 3 others, 1 healer (in that order, top to bottom). Tanks, healers
+-- and others are each sorted by gear score and handed out group by group, so group 1 gets the
+-- highest of each. A group with no tank (or healer) left fills that place with the next other.
+-- Tanks / healers beyond the number of groups go back into the others. A group short of people is
+-- packed from its top slot, except that its healer stays in the bottom slot of the group (leaving
+-- a gap above them); NextMove gets them there by borrowing helper players, see pushAnchor.
+function SortPlan.BuildStyle2(members, cfg)
+    local size = cfg.groupSize
+    local groups = math.ceil(cfg.maxMembers / size)
+    local tanks, healers, others = {}, {}, {}
+    for _, m in ipairs(members) do
+        if m.role == "tank" then tanks[#tanks + 1] = m
+        elseif m.role == "healer" then healers[#healers + 1] = m
+        else others[#others + 1] = m end
+    end
+    table.sort(tanks, byGearScore)
+    table.sort(healers, byGearScore)
+    local needed = math.min(groups, math.ceil(#members / size))
+    for i = needed + 1, #tanks do others[#others + 1] = tanks[i]; tanks[i] = nil end
+    for i = needed + 1, #healers do others[#others + 1] = healers[i]; healers[i] = nil end
+    table.sort(others, byGearScore)
+
+    local nextOther = 1
+    local function popOther()
+        local m = others[nextOther]
+        if m ~= nil then nextOther = nextOther + 1 end
+        return m
+    end
+    local desired = {}
+    for g = 1, groups do
+        local picks = {tanks[g] or popOther()}
+        for _ = 1, size - 2 do picks[#picks + 1] = popOther() end
+        local healer = healers[g]
+        if healer == nil then picks[#picks + 1] = popOther() end
+        local slot = (g - 1) * size
+        for _, m in ipairs(picks) do
+            slot = slot + 1
+            desired[slot] = m.name
+        end
+        if healer ~= nil then
+            -- a short group keeps its healer in the bottom slot, a full one has them right after the others
+            desired[slot + 1 < g * size and g * size or slot + 1] = healer.name
+        end
+    end
+    return desired
+end
+
 local function groupOf(slot, size)
     return math.ceil(slot / size)
 end
@@ -127,8 +174,73 @@ function SortPlan.Apply(current, from, to, size)
     end
 end
 
--- current: slot -> member name. Returns fromSlot, toSlot of the next single move, or nil when the
--- raid already matches `desired`. Planned in phases so the game's placement rules cannot trip it:
+-- Groups whose desired layout has a member in the bottom slot and a gap above them ("anchored"
+-- groups, see BuildStyle2). Returns group -> true.
+local function anchoredGroups(desired, groups, size)
+    local anchored = {}
+    for g = 1, groups do
+        local last = g * size
+        if desired[last] ~= nil then
+            for s = last - size + 1, last - 1 do
+                if desired[s] == nil then anchored[g] = true; break end
+            end
+        end
+    end
+    return anchored
+end
+
+-- Phase 0. Moving a member into a group with free slots puts them in the TOPMOST free slot, so the
+-- bottom slot of a group with a gap cannot be asked for directly. Instead, once everyone who belongs
+-- to the anchored group is in it, borrow players from other groups to fill the free slots above the
+-- bottom one (each lands in the topmost free slot); when only the bottom slot is left free, the
+-- anchored member moves there. The helpers go home afterwards through the normal group phase.
+-- Only done when enough helpers exist, otherwise the anchored member is left where compaction puts them.
+local function pushAnchor(current, desired, slotOf, wantGroup, anchored, groups, size, maxSlot)
+    for g = 1, groups do
+        if anchored[g] then
+            local last = g * size
+            local anchor = desired[last]
+            local anchorSlot = slotOf[anchor]
+            if current[last] == nil and anchorSlot ~= nil and groupOf(anchorSlot, size) == g then
+                local ready, bodyWanted, helpers = true, 0, 0
+                for s = last - size + 1, last - 1 do
+                    if desired[s] ~= nil then
+                        bodyWanted = bodyWanted + 1
+                        local at = slotOf[desired[s]]
+                        if at == nil or groupOf(at, size) ~= g then ready = false end
+                    end
+                    local occupant = current[s]
+                    if occupant ~= nil and wantGroup[occupant] ~= g then helpers = helpers + 1 end
+                end
+                if ready then
+                    local need = (size - 1) - (bodyWanted + 1) -- helpers that must stand above the anchored member
+                    local free = topFreeSlot(current, g, size)
+                    if free == last then
+                        return anchorSlot, last, "push " .. anchor .. " to the bottom slot"
+                    end
+                    -- first member (lowest slot) of another settled group that is not itself anchored
+                    local candidates, first = 0, nil
+                    for slot = 1, maxSlot do
+                        local name = current[slot]
+                        local group = groupOf(slot, size)
+                        if name ~= nil and group ~= g and wantGroup[name] == group and not anchored[group] then
+                            candidates = candidates + 1
+                            first = first or slot
+                        end
+                    end
+                    if helpers + candidates >= need and first ~= nil then
+                        return first, free, "borrow " .. current[first] .. " as a helper for " .. anchor
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+-- current: slot -> member name. Returns fromSlot, toSlot of the next single move (and, for the
+-- helper moves, a third value describing why), or nil when the raid already matches `desired`.
+-- Planned in phases so the game's placement rules cannot trip it:
 --   1. get everyone into their desired GROUP: into a group with a free slot (target = its topmost
 --      free slot), else swap with someone in that group who does not belong there;
 --   2. compact each group upward (move a member into the topmost free slot above them);
@@ -151,6 +263,11 @@ function SortPlan.NextMove(current, desired, maxSlot, size)
         local name = desired[slot]
         if name ~= nil and slotOf[name] ~= nil then order[#order + 1] = name end
     end
+
+    local anchored = anchoredGroups(desired, groups, size)
+    -- 0. get anchored (bottom slot, gap above) members into place with helpers
+    local pushFrom, pushTo, pushWhy = pushAnchor(current, desired, slotOf, wantGroup, anchored, groups, size, maxSlot)
+    if pushFrom ~= nil then return pushFrom, pushTo, pushWhy end
 
     -- 1a. into a group that has room
     for _, name in ipairs(order) do
@@ -177,11 +294,25 @@ function SortPlan.NextMove(current, desired, maxSlot, size)
         end
     end
 
-    -- 2. close gaps: the bottom-most member that has a free slot above them moves to the topmost one
+    -- 2. close gaps: the bottom-most member that has a free slot above them moves to the topmost one.
+    -- In an anchored group the bottom slot is left alone (its member belongs there); anyone else
+    -- standing in it moves up, and the rest is compacted within the slots above it.
     for group = 1, groups do
-        local free = topFreeSlot(current, group, size)
+        local last = group * size
+        local top = last
+        if anchored[group] then
+            if current[last] ~= nil and current[last] ~= desired[last] then
+                local free = topFreeSlot(current, group, size)
+                if free ~= nil then return last, free end
+            end
+            top = last - 1
+        end
+        local free
+        for slot = (group - 1) * size + 1, top do
+            if current[slot] == nil then free = slot; break end
+        end
         if free ~= nil then
-            for slot = group * size, free + 1, -1 do
+            for slot = top, free + 1, -1 do
                 if current[slot] ~= nil then return slot, free end
             end
         end
@@ -190,7 +321,10 @@ function SortPlan.NextMove(current, desired, maxSlot, size)
     -- 3. order within each group: first wrong position gets the member that belongs there
     for slot = 1, maxSlot do
         local want = desired[slot]
-        if want ~= nil and current[slot] ~= want and slotOf[want] ~= nil then
+        -- an empty bottom slot of an anchored group is filled by phase 0 (or left empty when no helpers exist)
+        local group = groupOf(slot, size)
+        local leaveEmpty = current[slot] == nil and anchored[group] and slot == group * size
+        if want ~= nil and current[slot] ~= want and slotOf[want] ~= nil and not leaveEmpty then
             return slotOf[want], slot
         end
     end

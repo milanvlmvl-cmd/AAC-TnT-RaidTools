@@ -24,17 +24,45 @@ function SortWindow.Create(root)
     local background = Widgets.AddBackground(window, "sort_bg", constants.folderPath .. "images/background.png", dims.width, dims.height)
 
     local body = Widgets.Make("emptywidget", "sort_body", window, 0, dims.headerHeight, dims.width, dims.height - dims.headerHeight)
-    local lines = {
-        "Tanks:  groups " .. groupList(sort.tankGroups),
-        "Healers:  groups " .. groupList(sort.healerGroups),
-        "Others:  groups " .. groupList(sort.otherGroups),
-        "Others: " .. table.concat(sort.otherSkillsetOrder, ", "),
-        "Each sorted by gear score, highest first",
-        "Re-checked every " .. math.floor(sort.recheckMs / 1000) .. "s and on join/leave",
+    local recheck = "Re-checked every " .. math.floor(sort.recheckMs / 1000) .. "s and on join/leave"
+    local styleLines = {
+        [1] = {
+            "Tanks:  groups " .. groupList(sort.tankGroups),
+            "Healers:  groups " .. groupList(sort.healerGroups),
+            "Others:  groups " .. groupList(sort.otherGroups),
+            "Others: " .. table.concat(sort.otherSkillsetOrder, ", "),
+            "Each sorted by gear score, highest first",
+            recheck,
+        },
+        [2] = {
+            "Each group: 1 tank, 3 others, 1 healer",
+            "Highest gear score fills the first group",
+            "A group with no tank gets an other instead",
+            "A short group keeps its healer in the",
+            "bottom slot (other players help push)",
+            recheck,
+        },
     }
-    for i, text in ipairs(lines) do
-        Widgets.Make("label", "sort_line" .. i, body, x, 6 + (i - 1) * 22, dims.width - 2 * x, 20, text)
+    local labels = {}
+    for i = 1, 6 do
+        labels[i] = Widgets.Make("label", "sort_line" .. i, body, x, 6 + (i - 1) * 22, dims.width - 2 * x, 20, styleLines[1][i])
     end
+    local function applyStyle(style)
+        for i, label in ipairs(labels) do label:SetText(styleLines[style][i]) end
+    end
+
+    -- bottom row: sort style toggle
+    local style = settings.Get("RaidSortStyle")
+    local styleY = 6 + 6 * 22 + 8
+    Widgets.Make("label", "sort_style_label", body, x, styleY + 2, 90, 22, "Sort style:")
+    local styleButton = Widgets.Make("button", "sort_style", body, x + 100, styleY, 130, 22, "STYLE " .. style)
+    styleButton:SetHandler("OnClick", function()
+        style = style % #constants.sortStyles + 1
+        styleButton:SetText("STYLE " .. style)
+        applyStyle(style)
+        raidsort.SetStyle(style)
+    end)
+    applyStyle(style)
 
     local function applyEnabled(enabled)
         local height = enabled and dims.height or dims.headerHeight

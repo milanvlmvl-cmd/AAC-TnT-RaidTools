@@ -3,6 +3,7 @@ local Logic = require("AAC-TnT-RaidTools/logic")
 local constants = require("AAC-TnT-RaidTools/core/constants")
 local settings = require("AAC-TnT-RaidTools/core/settings")
 local trace = require("AAC-TnT-RaidTools/core/trace")
+local Authority = require("AAC-TnT-RaidTools/core/authority")
 
 local RaidTools = {}
 
@@ -45,6 +46,10 @@ local function handleInvites(channelId, speakerName, message)
             local config = inviteConfig(index)
             local ok, reason = Logic.check({name = speakerName, text = message}, channelId, config, config.blacklist, config.whitelist)
             if ok then
+                if not Authority.CanManage() then
+                    debug("invite " .. index .. ": matched, but you are not raid lead")
+                    return true
+                end
                 if isInTeam(speakerName) then
                     debug("invite " .. index .. ": matched, but " .. speakerName .. " is already in the raid")
                     return

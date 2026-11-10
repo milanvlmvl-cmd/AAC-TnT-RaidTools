@@ -3,6 +3,7 @@ local constants = require("AAC-TnT-RaidTools/core/constants")
 local settings = require("AAC-TnT-RaidTools/core/settings")
 local trace = require("AAC-TnT-RaidTools/core/trace")
 local SortPlan = require("AAC-TnT-RaidTools/core/sortplan")
+local Authority = require("AAC-TnT-RaidTools/core/authority")
 
 -- When enabled, keeps the raid ordered: tanks in groups 1 and 6, healers in 5 and 10, everyone
 -- else in 2, 3, 4, 7, 8, 9, each group sorted by gear score (highest first). It re-reads the raid
@@ -21,7 +22,9 @@ local movesThisRun = 0
 -- Until the roster shows the member in their new slot the move is "pending": no further move is
 -- sent, because planning from the stale layout would repeat it and could undo the swap.
 local pending = nil -- {name, from, to, at}
-local halted = false -- a move never took effect: stop until the roster changes
+local halted = false -- a move never took effect (and retrying did not help): stop until the roster changes
+local queued = nil -- a planned move waiting out cfg.sendDelayMs before it is sent: {name, from, to}
+local failedMoves = 0 -- consecutive moves that never showed up in the roster; reset when one does
 local rosterSignature = nil
 
 -- last readable value per player name, used while they are out of range
@@ -169,10 +172,17 @@ local function readRoster()
             local skillIds = readSkillsetIds(unit)
             if skillIds ~= nil then skillCache[name] = skillIds end
             local role, source = decideRole(knownClass, skillCache[name])
+            -- last resort, only when neither class nor skillsets can be read: the role colour the
+            -- player picked in the raid window (GetRole's id, mapped by cfg.roleColors)
+            local colorId = safe("GetRole", function() return api.Team:GetRole(slot) end)
+            if source == "none" and knownClass == nil and skillCache[name] == nil then
+                local fromColor = cfg.roleColors[colorId]
+                if fromColor ~= nil then role, source = fromColor, "color" end
+            end
             members[#members + 1] = {
                 name = name, slot = slot, unit = unit,
                 class = knownClass or "unknown",
-                role = role, roleSource = source,
+                role = role, roleSource = source, color = colorId,
                 rank = otherRank(skillCache[name]),
                 gs = gearCache[name] or 0,
             }
@@ -207,14 +217,15 @@ local function signatureOf(members)
 end
 
 local function describe(m)
-    return m.name .. "(" .. m.class .. "/" .. m.role .. (m.roleSource == "skills" and "[skills]" or "")
-        .. " gs=" .. m.gs .. " slot=" .. m.slot .. ")"
+    return m.name .. "(" .. m.class .. "/" .. m.role
+        .. ((m.roleSource == "skills" or m.roleSource == "color") and ("[" .. m.roleSource .. "]") or "")
+        .. " color=" .. tostring(m.color) .. " gs=" .. m.gs .. " slot=" .. m.slot .. ")"
 end
 
 local probeIndex, probeDone, probePending, probeMissingLogged = 1, false, nil, false
 
 local function resetRun()
-    halted, movesThisRun, pending = false, 0, nil
+    halted, movesThisRun, pending, failedMoves, queued = false, 0, nil, 0, nil
 end
 
 -- ---------------------------------------------------------------------------------------------
@@ -379,6 +390,7 @@ end
 -- "waiting" while the previous move has not shown up in the roster yet, false otherwise.
 local function runOnce()
     if not inRaid() then return false end
+    if not Authority.CanManage() then return false end -- not raid lead: no sorting
     local members = readRoster()
     local signature = signatureOf(members)
     if signature ~= rosterSignature then
@@ -400,21 +412,36 @@ local function runOnce()
     if pending ~= nil then
         if current[pending.to] == pending.name then
             pending = nil -- the swap went through; plan the next move from the new layout
+            failedMoves = 0
         elseif clock - pending.at < cfg.moveTimeoutMs then
             return "waiting"
         else
-            halted = true
-            log("stopping: " .. pending.name .. " did not move from slot " .. pending.from .. " to " .. pending.to
-                .. " within " .. cfg.moveTimeoutMs .. "ms (are you the raid leader?)")
+            local failed = pending
             pending = nil
+            failedMoves = failedMoves + 1
+            local text = failed.name .. " did not move from slot " .. failed.from .. " to " .. failed.to
+                .. " within " .. cfg.moveTimeoutMs .. "ms"
+            if Authority.IsLead() and failedMoves <= cfg.maxRetries then
+                -- we do have lead, so the move was lost or the layout changed under us: plan again
+                -- from the roster as it is now (the next pass re-reads it)
+                log(text .. "; you are lead, rebuilding the plan (retry " .. failedMoves .. "/" .. cfg.maxRetries .. ")")
+                return "waiting"
+            end
+            halted = true
+            log("stopping: " .. text .. (Authority.IsLead() and (" (" .. cfg.maxRetries .. " retries failed)") or " (you are not raid lead)"))
             return false
         end
     end
 
     if cfg.probe and cfg.probe.enabled then return runProbe(current) end
 
-    local desired = SortPlan.Build(members, cfg)
-    local from, to = SortPlan.NextMove(current, desired, cfg.maxMembers, cfg.groupSize)
+    local desired
+    if settings.Get("RaidSortStyle") == 2 then
+        desired = SortPlan.BuildStyle2(members, cfg)
+    else
+        desired = SortPlan.Build(members, cfg)
+    end
+    local from, to, why = SortPlan.NextMove(current, desired, cfg.maxMembers, cfg.groupSize)
     if from == nil then
         if movesThisRun > 0 then log("raid sorted after " .. movesThisRun .. " moves") end
         movesThisRun = 0
@@ -429,12 +456,20 @@ local function runOnce()
     movesThisRun = movesThisRun + 1
     local mover, displaced = current[from], current[to]
     log("move " .. mover .. " slot " .. from .. " -> " .. to
-        .. (displaced and (" (swaps with " .. displaced .. ")") or " (free slot)") .. " #" .. movesThisRun)
-    -- done when the mover is in the slot we asked for (we only ask for the topmost free slot of a
-    -- group or an occupied slot, so that is where the game puts them)
-    pending = {name = mover, from = from, to = to, at = clock}
-    safe("MoveTeamMember", function() api.Team:MoveTeamMember(from, to) end)
-    return "moved"
+        .. (displaced and (" (swaps with " .. displaced .. ")") or " (free slot)")
+        .. (why and (" [" .. why .. "]") or "") .. " #" .. movesThisRun)
+    -- sent after cfg.sendDelayMs, see sendQueued
+    queued = {name = mover, from = from, to = to}
+    return "queued"
+end
+
+-- Sends the move planned by runOnce. It is done when the mover is in the slot we asked for (we only
+-- ask for the topmost free slot of a group or an occupied slot, so that is where the game puts them).
+local function sendQueued()
+    local move = queued
+    queued = nil
+    pending = {name = move.name, from = move.from, to = move.to, at = clock}
+    safe("MoveTeamMember", function() api.Team:MoveTeamMember(move.from, move.to) end)
 end
 
 local function onUpdate(dt)
@@ -443,8 +478,14 @@ local function onUpdate(dt)
     if not settings.Get("RaidSortEnabled") then return end
     timer = timer - dt
     if timer > 0 then return end
+    if queued ~= nil then
+        sendQueued()
+        timer = cfg.moveDelayMs
+        return
+    end
     local result = safe("raid sort pass", runOnce)
-    if result == "moved" then timer = cfg.moveDelayMs
+    if result == "queued" then timer = cfg.sendDelayMs
+    elseif result == "moved" then timer = cfg.moveDelayMs
     elseif result == "waiting" then timer = cfg.pollMs
     else timer = cfg.recheckMs end
 end
@@ -481,8 +522,17 @@ function RaidSort.SetEnabled(enabled)
     resetRun()
     resetProbe()
     dumped = {}
+    rosterSignature = nil -- log the roster again on the next pass
     timer = 0
     log("raid sort " .. (enabled and "enabled" or "disabled"))
+end
+
+-- Called when the sort style changes: re-plan at the next update.
+function RaidSort.SetStyle(style)
+    settings.Update("RaidSortStyle", style)
+    resetRun()
+    timer = 0
+    log("raid sort style " .. tostring(style))
 end
 
 return RaidSort

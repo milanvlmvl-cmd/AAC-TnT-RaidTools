@@ -38,6 +38,7 @@ local defaultSettings = {
 
     -- Raid sort
     RaidSortEnabled = false,
+    RaidSortStyle = 1, -- 1 = tanks / healers / others in their own groups, 2 = each group 1 tank, 3 others, 1 healer
 
     -- Diagnostics
     DebugChat = false, -- extra trace lines for every chat event; toggled by whispering "/debug" to yourself
@@ -141,6 +142,7 @@ function Settings.LoadSettings()
         if loaded.LeadChannel == name then validLeadChannel = true end
     end
     if not validLeadChannel then loaded.LeadChannel = defaultSettings.LeadChannel end
+    if loaded.RaidSortStyle ~= 1 and loaded.RaidSortStyle ~= 2 then loaded.RaidSortStyle = defaultSettings.RaidSortStyle end
     return loaded
 end
 
