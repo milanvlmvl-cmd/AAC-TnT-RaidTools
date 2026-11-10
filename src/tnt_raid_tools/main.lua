@@ -25,22 +25,29 @@ local function defaults()
 end
 
 local function loadSettings()
-    local ok, saved = call(api, "GetSettings", addonId)
+    local getSettings = get(api, "GetSettings")
+    local ok, saved = false, nil
+    if type(getSettings) == "function" then ok, saved = pcall(getSettings, addonId) end
     settings = ok and type(saved) == "table" and saved or defaults()
+    settings.phrases = type(settings.phrases) == "table" and settings.phrases or {}
     local base = defaults()
     for i = 1, 2 do
         settings.phrases[i] = settings.phrases[i] or base.phrases[i]
+        settings.phrases[i].phrase = settings.phrases[i].phrase or base.phrases[i].phrase
+        settings.phrases[i].channel = settings.phrases[i].channel or base.phrases[i].channel
+        settings.phrases[i].match = settings.phrases[i].match or base.phrases[i].match
+        settings.phrases[i].whitelist = settings.phrases[i].whitelist or {}
+        settings.phrases[i].blacklist = settings.phrases[i].blacklist or {}
     end
     settings.lead = settings.lead or base.lead
-    settings.phrases[1].blacklist = settings.phrases[1].blacklist or {}
-    settings.phrases[2].blacklist = settings.phrases[2].blacklist or {}
-    settings.phrases[1].whitelist = settings.phrases[1].whitelist or {}
-    settings.phrases[2].whitelist = settings.phrases[2].whitelist or {}
+    settings.lead.phrase = settings.lead.phrase or base.lead.phrase
+    settings.lead.channel = settings.lead.channel or base.lead.channel
     settings.lead.whitelist = settings.lead.whitelist or {}
 end
 
 local function saveSettings()
-    call(api, "SaveSettings")
+    local save = get(api, "SaveSettings")
+    if type(save) == "function" then pcall(save) end
 end
 
 local function dispose()
@@ -188,7 +195,8 @@ function addon.OnLoad()
     loadSettings()
     live = true
     buildPanel()
-    call(api, "On", "CHAT_MESSAGE", onChat)
+    local subscribe = get(api, "On")
+    if type(subscribe) == "function" then pcall(subscribe, "CHAT_MESSAGE", onChat) end
 end
 
 function addon.OnSettingToggle()
