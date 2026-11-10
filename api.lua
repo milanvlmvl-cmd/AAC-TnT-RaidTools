@@ -32,7 +32,9 @@ UIC = {
     WATCH_TARGET_FRAME = 0,
     RAID_MANAGER = 0,
     COMMUNITY_WINDOW = 0,
-    ENCHANT_WINDOW = 0
+        ENCHANT_WINDOW = 0,
+        ADVENTURE_GUIDE = 0,
+        RESIDENT_GLOBAL_TRADE = 0
   }
 BUTTON_BASIC = BUTTON_BASIC
 CURSOR_PATH = CURSOR_PATH
@@ -504,8 +506,15 @@ ADDON_API = {
     Bank = {},
     Equipment = {},
     SiegeWeapon = {},
+    ItemEnchant = {},
+    Map = {},
+    Quest = {},
+    Zone = {},
+    Craft = {},
     Option = {},
     Chat = {},
+    Nametag = {},
+    Voice = {},
 	-- This is the 'addons' directory at runtime
 	baseDir = "",
 	rootWindow = {},
@@ -583,6 +592,13 @@ end
     @returns (nil)
 ]]
 function ADDON_API.SaveSettings()
+end
+
+--[[ 
+    Gets current UI memory usage in MB
+    @returns (number|nil) Memory usage in MB, or nil if unavailable
+]]
+function ADDON_API.GetMemoryUsage()
 end
 
 -- ======
@@ -931,6 +947,15 @@ function ADDON_API.Unit:GetCurrentZoneGroup()
 end
 
 --[[ 
+    Registers a raw unit ID received from a game event into the known store.
+    Returns the ID so it can be passed to GetUnitInfoById for safe-subset info.
+    @param unitId (number) The unit ID from an event
+    @returns (number) The registered unit ID
+]]
+function ADDON_API.Unit:RememberEventUnitId(unitId)
+end
+
+--[[ 
     Gets the current target unit
     @param unit (string) The unit identifier
     @returns (string) The current target unit identifier
@@ -1003,6 +1028,14 @@ end
     @returns (number) The role ID
 ]]
 function ADDON_API.Team:GetRole(memberIndex)
+end
+
+--[[ 
+    Promotes a player to team owner
+    @param target (string) The player name to promote
+    @returns (nil)
+]]
+function ADDON_API.Team:MakeTeamOwner(target)
 end
 
 --[[ 
@@ -1668,6 +1701,108 @@ end
     @returns (nil)
 ]]
 function ADDON_API.Chat:ExpressEmotion(emotion)
+end
+
+-- ======
+-- Nametag
+-- ======
+
+--[[ 
+    Sets the nameplate color for friendly players
+    @param color (number|string) The color value (can be integer or numeric string)
+    @returns (nil)
+]]
+function ADDON_API.Nametag:SetColorFriendly(color)
+end
+
+--[[ 
+    Sets the nameplate color for friendly NPCs
+    @param color (number|string) The color value (can be integer or numeric string)
+    @returns (nil)
+]]
+function ADDON_API.Nametag:SetColorFriendlyNPC(color)
+end
+
+--[[ 
+    Sets the nameplate color for neutral units
+    @param color (number|string) The color value (can be integer or numeric string)
+    @returns (nil)
+]]
+function ADDON_API.Nametag:SetColorNeutral(color)
+end
+
+--[[ 
+    Sets the nameplate color for party members
+    @param color (number|string) The color value (can be integer or numeric string)
+    @returns (nil)
+]]
+function ADDON_API.Nametag:SetColorParty(color)
+end
+
+--[[ 
+    Sets the nameplate color for raid members
+    @param color (number|string) The color value (can be integer or numeric string)
+    @returns (nil)
+]]
+function ADDON_API.Nametag:SetColorRaid(color)
+end
+
+--[[ 
+    Sets the nameplate color for flagged raid members (PK)
+    @param color (number|string) The color value (can be integer or numeric string)
+    @returns (nil)
+]]
+function ADDON_API.Nametag:SetColorRaidPK(color)
+end
+
+--[[ 
+    Sets the nameplate color for flagged players
+    @param color (number|string) The color value (can be integer or numeric string)
+    @returns (nil)
+]]
+function ADDON_API.Nametag:SetColorPK(color)
+end
+
+--[[ 
+    Sets the nameplate color for enemy players
+    @param color (number|string) The color value (can be integer or numeric string)
+    @returns (nil)
+]]
+function ADDON_API.Nametag:SetColorEnemy(color)
+end
+
+--[[ 
+    Sets the nameplate color for monsters
+    @param color (number|string) The color value (can be integer or numeric string)
+    @returns (nil)
+]]
+function ADDON_API.Nametag:SetColorMonster(color)
+end
+
+--[[ 
+    Sets the nameplate color for pirates
+    @param color (number|string) The color value (can be integer or numeric string)
+    @returns (nil)
+]]
+function ADDON_API.Nametag:SetColorPirate(color)
+end
+
+-- ======
+-- Voice
+-- ======
+
+--[[ 
+    Gets current voice connection status
+    @returns (string) Voice status (for example: Disconnected, Connected, Unavailable)
+]]
+function ADDON_API.Voice:GetVoiceStatus()
+end
+
+--[[ 
+    Gets the current list of active voice talkers
+    @returns (table) A list of talkers: { { charId = number, name = string }, ... }
+]]
+function ADDON_API.Voice:GetTalkerList()
 end
 
 return ADDON_API
