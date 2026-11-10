@@ -3,6 +3,7 @@ local constants = require("AAC-TnT-RaidTools/core/constants")
 local Logic = require("AAC-TnT-RaidTools/logic")
 local settings = require("AAC-TnT-RaidTools/core/settings")
 local raidtools = require("AAC-TnT-RaidTools/features/raidtools")
+local raidsort = require("AAC-TnT-RaidTools/features/raidsort")
 local panel = require("AAC-TnT-RaidTools/ui/panel")
 local trace = require("AAC-TnT-RaidTools/core/trace")
 
@@ -21,12 +22,14 @@ function TnTRaidTools.OnLoad()
     -- every Logic.check writes one line to the trace file
     Logic.trace = trace.Add
     raidtools.OnLoad()
+    raidsort.OnLoad()
     local ok, err = pcall(panel.OnLoad)
     raidtools.Log(ok and "panel built" or ("panel failed: " .. tostring(err)))
 end
 
 function TnTRaidTools.OnUnload()
     Logic.trace = nil
+    raidsort.OnUnload()
     raidtools.OnUnload()
     panel.OnUnload()
     settings.Reset()

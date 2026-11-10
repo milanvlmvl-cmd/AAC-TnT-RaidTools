@@ -36,6 +36,9 @@ local defaultSettings = {
     WhitelistPublic = {},
     WhitelistPrivate = {},
 
+    -- Raid sort
+    RaidSortEnabled = false,
+
     -- Diagnostics
     DebugChat = false, -- extra trace lines for every chat event; toggled by whispering "/debug" to yourself
 

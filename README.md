@@ -11,6 +11,9 @@ Raid invite phrases and lead handoff, embedded in the raid manager panel.
 - `ui/panel.lua` - Invite 1/2 windows beside the raid window, main panel window below it (raid window is never resized)
 - `ui/listpanel.lua` - add/remove editor for a name array (blacklist, whitelist)
 - `ui/widgets.lua` - widget factory, checkbox (ported from WorldSatNav), cleanup
+- `features/raidsort.lua` - raid sort: tanks / healers / others into raid groups by gear score (see `constants.raidSort`)
+- `core/sortplan.lua` - pure layout planning for the raid sort
+- `ui/sortwindow.lua` - raid sort window on the right of the raid window
 - `logic.lua` - pure matching helpers
 - `api.lua`, `API_DOCUMENTATION.md` - game API reference
 

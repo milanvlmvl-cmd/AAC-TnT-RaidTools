@@ -3,10 +3,12 @@ local settings = require("AAC-TnT-RaidTools/core/settings")
 local raidtools = require("AAC-TnT-RaidTools/features/raidtools")
 local Widgets = require("AAC-TnT-RaidTools/ui/widgets")
 local ListPanel = require("AAC-TnT-RaidTools/ui/listpanel")
+local SortWindow = require("AAC-TnT-RaidTools/ui/sortwindow")
 
 local Panel = {}
 
 local panel -- main panel under the raid window
+local sortWindow
 local inviteWindows = {} -- [1] left of the raid window, [2] right of it
 local editors = {} -- ["Blacklist"] / ["Whitelist"] / ["Lead"] -> ListPanel
 local make = Widgets.Make
@@ -132,8 +134,9 @@ local function buildLeadSection(x, y, width)
     textBox(panel, "lead_phrase", x, y + 48, 90, "LeadPhrase")
     cycleButton(panel, "lead_channel", x + 95, y + 48, 90, "LeadChannel", constants.leadChannelOrder)
 
-    checkbox("lead_allow", panel, "Only these names", x, y + 78, "LeadWhitelistEnabled")
-    local edit = make("button", "lead_edit", panel, x, y + 108, 140, 24, "LEAD PASS LIST")
+    -- text-less checkbox (restrict lead pass to the list) with the list button right next to it
+    checkbox("lead_allow", panel, nil, x, y + 76, "LeadWhitelistEnabled")
+    local edit = make("button", "lead_edit", panel, x + 33, y + 78, 140, 24, "LEAD PASS LIST")
     edit:SetHandler("OnClick", function()
         panel:Show(false)
         editors.Lead.Open()
@@ -166,11 +169,12 @@ function Panel.OnLoad()
 
     editors.Lead = ListPanel.Create(root, {
         id = "lead", title = "LEAD PASS  -  allowed names", settingKey = "LeadWhitelist", onClose = Panel.Show,
-        hint = "Only these players can take lead, when \"Only these names\" is ticked on the main panel.",
+        hint = "When the checkbox next to LEAD PASS LIST is ticked, only these players can take lead.",
     })
 
     inviteWindows[1] = createInviteWindow(root, 1)
     inviteWindows[2] = createInviteWindow(root, 2, inviteWindows[1])
+    sortWindow = SortWindow.Create(root) -- right side of the raid window
 
     -- header bar (debug logging is toggled by whispering "/debug" to yourself, see raidtools.lua)
     make("label", "heading", panel, 10, 8, 300, 24, "TnT RAID TOOLS")
@@ -190,6 +194,7 @@ function Panel.OnUnload()
     Widgets.FreeAll()
     panel = nil
     inviteWindows = {}
+    sortWindow = nil
     editors = {}
 end
 
