@@ -14,6 +14,7 @@ local Constants = {
     listModes = {"public", "private", "disabled"}, -- blacklist / whitelist mode per invite
     matches = {"equals", "includes", "starts"},
     sortStyles = {1, 2}, -- raid sort layouts the Style button cycles through
+    sortStyleNames = {[1] = "Class", [2] = "Party"},
     -- Window below the raid window: the main panel (mainHeight) and the list editors that replace
     -- it while open (editorHeight). The raid window itself is never resized.
     panel = {width = 600, mainHeight = 180, editorHeight = 360, gap = 4},

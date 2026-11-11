@@ -56,10 +56,10 @@ function SortWindow.Create(root)
     local style = settings.Get("RaidSortStyle")
     local styleY = 6 + 6 * 22 + 8
     Widgets.Make("label", "sort_style_label", body, x, styleY + 2, 90, 22, "Sort style:")
-    local styleButton = Widgets.Make("button", "sort_style", body, x + 100, styleY, 130, 22, "STYLE " .. style)
+    local styleButton = Widgets.Make("button", "sort_style", body, x + 100, styleY, 130, 22, constants.sortStyleNames[style])
     styleButton:SetHandler("OnClick", function()
         style = style % #constants.sortStyles + 1
-        styleButton:SetText("STYLE " .. style)
+        styleButton:SetText(constants.sortStyleNames[style])
         applyStyle(style)
         raidsort.SetStyle(style)
     end)

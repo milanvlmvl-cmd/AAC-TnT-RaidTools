@@ -56,7 +56,7 @@ local defaultSettings = {
 
     -- Raid sort
     RaidSortEnabled = false,
-    RaidSortStyle = 1, -- 1 = tanks / healers / others in their own groups, 2 = each group 1 tank, 3 others, 1 healer
+    RaidSortStyle = 2, -- 1 = "Class": tanks / healers / others in their own groups, 2 = "Party": each group 1 tank, 3 others, 1 healer
 
     -- Diagnostics
     DebugChat = false, -- extra trace lines for every chat event; toggled by whispering "/debug" to yourself
