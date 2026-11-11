@@ -156,16 +156,20 @@ end
 -- How the game applies MoveTeamMember(from, to), as observed:
 --   * into a different group that has a free slot: the member lands in that group's TOPMOST free
 --     slot (not necessarily `to`);
---   * onto an occupied slot (target group full): the two members swap;
---   * within a group: an occupied target swaps, an empty target takes the topmost free slot.
--- Used by the planner's tests; the planner only ever asks for moves where `to` is that topmost free
--- slot or an occupied slot, so it does not depend on the exact rule for empty targets.
+--   * onto an occupied slot: the two members swap (also within a group);
+--   * within a group onto an EMPTY slot: nothing happens. To close a gap a member has to leave the
+--     group and come back (they then take the group's topmost free slot).
+-- Used by the planner's tests; the planner only ever asks for moves where `to` is the topmost free
+-- slot of a different group, or an occupied slot.
 function SortPlan.Apply(current, from, to, size)
     size = size or 5
     local mover = current[from]
     if mover == nil then return end
     local target = to
-    if current[to] == nil then target = topFreeSlot(current, groupOf(to, size), size) or to end
+    if current[to] == nil then
+        if groupOf(from, size) == groupOf(to, size) then return false end -- no effect in the game
+        target = topFreeSlot(current, groupOf(to, size), size) or to
+    end
     if current[target] == nil then
         current[from] = nil
         current[target] = mover
@@ -189,11 +193,12 @@ local function anchoredGroups(desired, groups, size)
     return anchored
 end
 
--- Phase 0. Moving a member into a group with free slots puts them in the TOPMOST free slot, so the
--- bottom slot of a group with a gap cannot be asked for directly. Instead, once everyone who belongs
--- to the anchored group is in it, borrow players from other groups to fill the free slots above the
--- bottom one (each lands in the topmost free slot); when only the bottom slot is left free, the
--- anchored member moves there. The helpers go home afterwards through the normal group phase.
+-- Phase 0. A member cannot be moved into an empty slot of its own group, and moving into another
+-- group always lands in that group's TOPMOST free slot, so the bottom slot of a group with a gap
+-- cannot be asked for directly. But two members of a group CAN swap. So, once everyone who belongs
+-- to the anchored group is in it, borrow players from other groups until the group is full (each
+-- lands in the topmost free slot), then swap the anchored member into the bottom slot. The helpers
+-- go home afterwards through the normal group phase, leaving the gap above the anchored member.
 -- Only done when enough helpers exist, otherwise the anchored member is left where compaction puts them.
 local function pushAnchor(current, desired, slotOf, wantGroup, anchored, groups, size, maxSlot)
     for g = 1, groups do
@@ -201,22 +206,22 @@ local function pushAnchor(current, desired, slotOf, wantGroup, anchored, groups,
             local last = g * size
             local anchor = desired[last]
             local anchorSlot = slotOf[anchor]
-            if current[last] == nil and anchorSlot ~= nil and groupOf(anchorSlot, size) == g then
-                local ready, bodyWanted, helpers = true, 0, 0
+            if anchorSlot ~= nil and groupOf(anchorSlot, size) == g and current[last] ~= anchor then
+                local ready = true
                 for s = last - size + 1, last - 1 do
                     if desired[s] ~= nil then
-                        bodyWanted = bodyWanted + 1
                         local at = slotOf[desired[s]]
                         if at == nil or groupOf(at, size) ~= g then ready = false end
                     end
-                    local occupant = current[s]
-                    if occupant ~= nil and wantGroup[occupant] ~= g then helpers = helpers + 1 end
                 end
                 if ready then
-                    local need = (size - 1) - (bodyWanted + 1) -- helpers that must stand above the anchored member
                     local free = topFreeSlot(current, g, size)
-                    if free == last then
-                        return anchorSlot, last, "push " .. anchor .. " to the bottom slot"
+                    if free == nil then
+                        return anchorSlot, last, "swap " .. anchor .. " into the bottom slot"
+                    end
+                    local freeCount = 0
+                    for s = last - size + 1, last do
+                        if current[s] == nil then freeCount = freeCount + 1 end
                     end
                     -- first member (lowest slot) of another settled group that is not itself anchored
                     local candidates, first = 0, nil
@@ -228,7 +233,7 @@ local function pushAnchor(current, desired, slotOf, wantGroup, anchored, groups,
                             first = first or slot
                         end
                     end
-                    if helpers + candidates >= need and first ~= nil then
+                    if candidates >= freeCount and first ~= nil then
                         return first, free, "borrow " .. current[first] .. " as a helper for " .. anchor
                     end
                 end
@@ -243,7 +248,8 @@ end
 -- Planned in phases so the game's placement rules cannot trip it:
 --   1. get everyone into their desired GROUP: into a group with a free slot (target = its topmost
 --      free slot), else swap with someone in that group who does not belong there;
---   2. compact each group upward (move a member into the topmost free slot above them);
+--   2. compact each group upward (a member steps out to another group and phase 1 brings them back
+--      into the topmost free slot, since moving to an empty slot of the same group does nothing);
 --   3. order each group by swapping occupied slots (exact, no free-slot placement involved).
 -- Every move either puts a member in the right group, closes a gap, or fixes one position, and
 -- never undoes earlier progress, so the sequence always finishes.
@@ -294,26 +300,37 @@ function SortPlan.NextMove(current, desired, maxSlot, size)
         end
     end
 
-    -- 2. close gaps: the bottom-most member that has a free slot above them moves to the topmost one.
-    -- In an anchored group the bottom slot is left alone (its member belongs there); anyone else
-    -- standing in it moves up, and the rest is compacted within the slots above it.
+    -- 2. close gaps. A member cannot move to an empty slot of its own group, so the bottom-most member
+    -- that has a free slot above them leaves for another group with room (phase 1 then brings them
+    -- back, into the topmost free slot of their own group). If no other group has room they swap out
+    -- with someone settled in another group instead. Anchored groups (see BuildStyle2) are left alone
+    -- in their bottom slot and compacted within the slots above it; groups that are anchored are never
+    -- used as the place to step out to.
     for group = 1, groups do
         local last = group * size
-        local top = last
-        if anchored[group] then
-            if current[last] ~= nil and current[last] ~= desired[last] then
-                local free = topFreeSlot(current, group, size)
-                if free ~= nil then return last, free end
-            end
-            top = last - 1
-        end
+        local top = anchored[group] and last - 1 or last
         local free
         for slot = (group - 1) * size + 1, top do
             if current[slot] == nil then free = slot; break end
         end
+        local mover
         if free ~= nil then
             for slot = top, free + 1, -1 do
-                if current[slot] ~= nil then return slot, free end
+                if current[slot] ~= nil then mover = slot; break end
+            end
+        end
+        if mover ~= nil then
+            for other = 1, groups do
+                if other ~= group and not anchored[other] then
+                    local room = topFreeSlot(current, other, size)
+                    if room ~= nil then return mover, room end
+                end
+            end
+            for slot = 1, maxSlot do
+                local name, otherGroup = current[slot], groupOf(slot, size)
+                if name ~= nil and otherGroup ~= group and not anchored[otherGroup] and wantGroup[name] == otherGroup then
+                    return mover, slot
+                end
             end
         end
     end
@@ -324,7 +341,7 @@ function SortPlan.NextMove(current, desired, maxSlot, size)
         -- an empty bottom slot of an anchored group is filled by phase 0 (or left empty when no helpers exist)
         local group = groupOf(slot, size)
         local leaveEmpty = current[slot] == nil and anchored[group] and slot == group * size
-        if want ~= nil and current[slot] ~= want and slotOf[want] ~= nil and not leaveEmpty then
+        if want ~= nil and current[slot] ~= nil and current[slot] ~= want and slotOf[want] ~= nil and not leaveEmpty then
             return slotOf[want], slot
         end
     end

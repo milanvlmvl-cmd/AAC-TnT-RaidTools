@@ -117,7 +117,6 @@ end
 
 local function onChat(...)
     local channelId, speakerId, extra, speakerName, message = ...
-    RaidTools.Log("CHAT_MESSAGE channelId " .. tostring(channelId) .. " speakerName " .. tostring(speakerName) .. " message " .. tostring(message))
     if settings.Get("DebugChat") then
         -- the game's Lua has no global `select`, so read the arguments through a table
         local args = {...}

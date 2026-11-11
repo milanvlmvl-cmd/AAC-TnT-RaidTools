@@ -32,7 +32,9 @@ local gearCache, classCache, skillCache = {}, {}, {}
 
 local roleByClass = {} -- lowercase class name -> "tank" | "healer" (explicit class lists)
 
+-- Sort trace lines (moves, roster changes, stops) are only written while debug logging is on.
 local function log(text)
+    if not settings.Get("DebugChat") then return end
     trace.Add("[raidsort] " .. text)
 end
 
@@ -156,7 +158,8 @@ end
 
 -- Everyone in the raid as {name, slot, class, role, gs}. A class or gear score that cannot be read
 -- (out of range, API failure) falls back to the last readable value for that player, and then to
--- class "unknown" (role "other") and gear score 0, so nobody is ever left out of the plan.
+-- class "unknown" (role "other") and a fake gear score equal to the name length (far below any real
+-- score, so unknowns sort last in a steady order), so nobody is ever left out of the plan.
 local function readRoster()
     local members = {}
     local playerSlot = safe("GetTeamPlayerIndex", function() return api.Team:GetTeamPlayerIndex() end)
@@ -184,7 +187,7 @@ local function readRoster()
                 class = knownClass or "unknown",
                 role = role, roleSource = source, color = colorId,
                 rank = otherRank(skillCache[name]),
-                gs = gearCache[name] or 0,
+                gs = gearCache[name] or #name, -- unknown: fake a tiny score from the name length, stable across joins/leaves
             }
         end
     end
