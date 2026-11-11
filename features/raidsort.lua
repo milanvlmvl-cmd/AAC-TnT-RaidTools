@@ -219,6 +219,20 @@ local function signatureOf(members)
     return table.concat(parts, ",")
 end
 
+-- Names currently in the raid, in the same form as signatureOf, read cheaply (no class / gear lookups).
+local knownNames = nil -- names as of the last join/leave seen
+local function rosterNames()
+    local names = {}
+    local playerSlot = safe("GetTeamPlayerIndex", function() return api.Team:GetTeamPlayerIndex() end)
+    for slot = 1, cfg.maxMembers do
+        local unit = (slot == playerSlot) and "player" or ("team" .. slot)
+        local name = safe("UnitName", function() return api.Unit:UnitName(unit) end)
+        if type(name) == "string" and name ~= "" then names[#names + 1] = name end
+    end
+    table.sort(names)
+    return table.concat(names, ",")
+end
+
 local function describe(m)
     return m.name .. "(" .. m.class .. "/" .. m.role
         .. ((m.roleSource == "skills" or m.roleSource == "color") and ("[" .. m.roleSource .. "]") or "")
@@ -397,6 +411,16 @@ local function runOnce()
     local members = readRoster()
     local signature = signatureOf(members)
     if signature ~= rosterSignature then
+        if rosterSignature ~= nil and signature ~= knownNames then
+            -- someone joined or left without the team event reaching us: settle first
+            knownNames = signature
+            rosterSignature = signature
+            resetRun()
+            timer = cfg.settleMs
+            log("roster changed without an event; waiting " .. cfg.settleMs .. "ms to settle")
+            return false
+        end
+        knownNames = signature
         rosterSignature = signature
         resetRun()
         local parts = {}
@@ -498,17 +522,23 @@ local function onUpdate(dt)
     else timer = cfg.recheckMs end
 end
 
--- Someone joined or left: re-check soon, and allow a halted sort to try again.
+-- Someone joined or left: restart the settle wait (every further join/leave restarts it again) and
+-- allow a halted sort to try again. Events that leave the set of names unchanged (the game may
+-- also fire this for moves within the raid) are ignored so they do not delay the sort.
 local function onTeamChanged()
     if not live then return end
+    local names = rosterNames()
+    if names == knownNames then return end
+    knownNames = names
     resetRun()
-    if timer > cfg.settleMs then timer = cfg.settleMs end
+    timer = cfg.settleMs
 end
 
 function RaidSort.OnLoad()
     live = true
     timer = cfg.settleMs
     rosterSignature = nil
+    knownNames = nil
     dumped = {}
     resetRun()
     resetProbe()

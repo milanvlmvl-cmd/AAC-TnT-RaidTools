@@ -5,7 +5,7 @@ local Constants = {
     addonName = "AAC-TnT-RaidTools", -- addon folder name, also the GetSettings id
     folderPath = api.baseDir .. "/AAC-TnT-RaidTools/",
     displayName = "TnT Raid Tools",
-    version = "0.1.4",
+    version = "0.1.5",
     legacyInviteSlots = 2, -- the fixed Invite1* / Invite2* keys older versions saved (migrated into the Invites list)
     -- Chat channel id each selection matches; "*" matches any channel id.
     channels = {all = "*", nation = 6, faction = 14, guild = 7, whisper = -3, raid = 5},
@@ -26,7 +26,7 @@ local Constants = {
         groupSize = 5,
         maxMembers = 50,
         recheckMs = 10000, -- re-read the raid this often (picks up gear scores of people now in range)
-        settleMs = 1500, -- wait this long after someone joins/leaves before sorting
+        settleMs = 3000, -- wait this long after someone joins/leaves before sorting; every further join/leave restarts the wait
         sendDelayMs = 40, -- wait this long between planning a move and sending it
         moveDelayMs = 250, -- wait after sending a move before checking that it took effect
         pollMs = 125, -- how often to check while waiting for a move to show up in the roster
