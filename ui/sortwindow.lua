@@ -65,6 +65,11 @@ function SortWindow.Create(root)
     end)
     applyStyle(style)
 
+    -- row below: remember scanned gear score + class on disk
+    Widgets.Checkbox("sort_save_gs", body, "Save GS+Class", x, styleY + 30, settings.Get("RaidSortSaveGsClass"), function(checked)
+        raidsort.SetSaveGsClass(checked)
+    end)
+
     -- Messages over the expanded window: the global switch is off (the sort does not run then either),
     -- and/or you are not raid lead (the sort is paused). Both can show at once.
     -- covers the whole window, header included

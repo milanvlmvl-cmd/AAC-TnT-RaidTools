@@ -58,6 +58,8 @@ local defaultSettings = {
     RaidSortEnabled = false,
     RaidSortStyle = 2, -- 1 = "Class": tanks / healers / others in their own groups, 2 = "Party": each group 1 tank, 3 others, 1 healer
 
+    RaidSortSaveGsClass = false, -- save a scanned player's real gear score + class to the players folder, and use it when they cannot be read
+
     -- Diagnostics
     DebugChat = false, -- extra trace lines for every chat event; toggled by whispering "/debug" to yourself
 

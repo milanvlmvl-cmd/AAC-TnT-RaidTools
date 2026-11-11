@@ -36,6 +36,10 @@ Turn it on with the **Enabled** checkbox in the Raid Sort window (off by default
 
 The addon reads everyone in the raid, plans the ideal layout and moves one member at a time, confirming each move in the roster before planning the next. The raid is re-checked every 10 seconds (gear scores and classes can only be read while a member is in range) and a few seconds after anyone joins or leaves. Within a role, players are sorted by gear score, highest first.
 
+### Save GS+Class
+
+Tick **Save GS+Class** in the Raid Sort window (off by default) to keep each player's real gear score and class on disk. Whenever a member is in range and can be read, their values are written to `AAC-TnT-RaidTools/players/<name>.dat` (only when they changed). Before sorting, a player whose class or gear score cannot be read and is not cached in memory is looked up in that folder, so people out of range (or after a reload) are still sorted by their last known values instead of last.
+
 ### Role detection
 
 A player's role is decided in this order:

@@ -5,7 +5,7 @@ local Constants = {
     addonName = "AAC-TnT-RaidTools", -- addon folder name, also the GetSettings id
     folderPath = api.baseDir .. "/AAC-TnT-RaidTools/",
     displayName = "TnT Raid Tools",
-    version = "0.1.5",
+    version = "0.1.6",
     legacyInviteSlots = 2, -- the fixed Invite1* / Invite2* keys older versions saved (migrated into the Invites list)
     -- Chat channel id each selection matches; "*" matches any channel id.
     channels = {all = "*", nation = 6, faction = 14, guild = 7, whisper = -3, raid = 5},
@@ -39,6 +39,8 @@ local Constants = {
         -- Test only: while enabled, turning the raid sort on does NOT sort. It writes one file per raid
         -- member to `folder` (relative to the addons folder) with their class name, their three skillset
         -- ids and names, and the raw unit info, so skillset names can be checked against the game.
+        -- The "Save GS+Class" checkbox also writes small files (name, className, gearScore) to this same
+        -- folder, and reads them back for a player whose class or gear score cannot be read right now.
         dump = {enabled = false, folder = "AAC-TnT-RaidTools/players"},
         probe = {enabled = false, name = "Madpeter", slots = {1, 6, 11}},
         -- A class that is in neither list below is matched by its skillsets instead (read from the
@@ -68,7 +70,7 @@ local Constants = {
         healerClasses = {"Confessor", "Cleric", "Hierophant", "Templar", "Soothsayer", "Edgewalker"},
     },
     -- Raid sort window on the right side of the raid window
-    sortPanel = {width = 300, height = 222, headerHeight = 36, gap = 4},
+    sortPanel = {width = 300, height = 252, headerHeight = 36, gap = 4},
     -- Invite list window on the left side of the raid window: a header, then a scrolling stack of invite cards.
     -- A card is a header row (collapse checkbox, title, X) plus a body that is hidden when collapsed.
     invitePanel = {

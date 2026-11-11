@@ -156,12 +156,53 @@ local function readClass(unit)
     return nil
 end
 
+-- ---------------------------------------------------------------------------------------------
+-- "Save GS+Class": real scanned values are kept on disk (cfg.dump.folder, one .dat file per player)
+-- and used for a player whose class or gear score cannot be read right now (out of range).
+-- ---------------------------------------------------------------------------------------------
+local savedOnDisk = {} -- name -> {class, gs} last written or read, so unchanged values are not rewritten
+local diskChecked = {} -- name -> true once the folder was checked for them this load
+
+local function fileNameFor(name)
+    return (name:gsub("[^%w_%-]", "_"))
+end
+
+local function playerFile(name)
+    return cfg.dump.folder .. "/" .. fileNameFor(name) .. ".dat"
+end
+
+-- Class and gear score from the player's file (nil, nil when there is none). Dump-mode files have the
+-- same className / gearScore fields, so they work too.
+local function loadFromDisk(name)
+    diskChecked[name] = true
+    local record = safe("File:Read", function() return api.File:Read(playerFile(name)) end)
+    if type(record) ~= "table" then return nil, nil end
+    local class = record.className
+    if type(class) == "table" then class = class.name or class.className or class.class_name end
+    if type(class) ~= "string" or class == "" then class = nil end
+    local gs = toGearScore(record.gearScore)
+    savedOnDisk[name] = {class = class, gs = gs}
+    return class, gs
+end
+
+local function saveToDisk(name, class, gs)
+    local last = savedOnDisk[name]
+    if last ~= nil and last.class == class and last.gs == gs then return end
+    local record = {name = name, className = class, gearScore = gs}
+    local ok = safe("File:Write", function() api.File:Write(playerFile(name), record) return true end)
+    if ok then
+        savedOnDisk[name] = {class = class, gs = gs}
+        log("saved " .. name .. ": " .. tostring(class) .. " gs=" .. tostring(gs))
+    end
+end
+
 -- Everyone in the raid as {name, slot, class, role, gs}. A class or gear score that cannot be read
 -- (out of range, API failure) falls back to the last readable value for that player, and then to
 -- class "unknown" (role "other") and a fake gear score equal to the name length (far below any real
 -- score, so unknowns sort last in a steady order), so nobody is ever left out of the plan.
 local function readRoster()
     local members = {}
+    local saveGsClass = settings.Get("RaidSortSaveGsClass")
     local playerSlot = safe("GetTeamPlayerIndex", function() return api.Team:GetTeamPlayerIndex() end)
     for slot = 1, cfg.maxMembers do
         local unit = (slot == playerSlot) and "player" or ("team" .. slot)
@@ -171,6 +212,16 @@ local function readRoster()
             if class ~= nil then classCache[name] = class end
             local gs = toGearScore(safe("UnitGearScore", function() return api.Unit:UnitGearScore(unit) end))
             if gs ~= nil then gearCache[name] = gs end
+            if saveGsClass then
+                -- still missing after the live read and the in-memory cache: try the player's file once
+                if (classCache[name] == nil or gearCache[name] == nil) and not diskChecked[name] then
+                    local diskClass, diskGs = loadFromDisk(name)
+                    if classCache[name] == nil and diskClass ~= nil then classCache[name] = diskClass end
+                    if gearCache[name] == nil and diskGs ~= nil then gearCache[name] = diskGs end
+                end
+                -- a real read this pass (not a cached or disk value): keep it on disk
+                if class ~= nil or gs ~= nil then saveToDisk(name, classCache[name], gearCache[name]) end
+            end
             local knownClass = classCache[name]
             local skillIds = readSkillsetIds(unit)
             if skillIds ~= nil then skillCache[name] = skillIds end
@@ -270,10 +321,6 @@ local function copyPlain(value, depth)
     end
     if value == nil then return nil end
     return tostring(value)
-end
-
-local function fileNameFor(name)
-    return (name:gsub("[^%w_%-]", "_"))
 end
 
 local function dumpMember(member)
@@ -407,7 +454,11 @@ end
 -- "waiting" while the previous move has not shown up in the roster yet, false otherwise.
 local function runOnce()
     if not inRaid() then return false end
-    if not Authority.CanManage() then return false end -- not raid lead: no sorting
+    if not Authority.CanManage() then
+        -- not raid lead: no sorting, but still scan so "Save GS+Class" keeps recording
+        if settings.Get("RaidSortSaveGsClass") then readRoster() end
+        return false
+    end
     local members = readRoster()
     local signature = signatureOf(members)
     if signature ~= rosterSignature then
@@ -540,6 +591,7 @@ function RaidSort.OnLoad()
     rosterSignature = nil
     knownNames = nil
     dumped = {}
+    savedOnDisk, diskChecked = {}, {}
     resetRun()
     resetProbe()
     buildRoleLookup()
@@ -563,6 +615,14 @@ function RaidSort.SetEnabled(enabled)
     rosterSignature = nil -- log the roster again on the next pass
     timer = 0
     log("raid sort " .. (enabled and "enabled" or "disabled"))
+end
+
+-- Called when the "Save GS+Class" checkbox changes: re-read the raid at the next update.
+function RaidSort.SetSaveGsClass(enabled)
+    settings.Update("RaidSortSaveGsClass", enabled)
+    diskChecked = {}
+    timer = 0
+    log("save gs+class " .. (enabled and "on" or "off"))
 end
 
 -- Called when the sort style changes: re-plan at the next update.
