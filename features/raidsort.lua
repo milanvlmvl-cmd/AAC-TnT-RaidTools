@@ -162,6 +162,8 @@ end
 -- ---------------------------------------------------------------------------------------------
 local savedOnDisk = {} -- name -> {class, gs} last written or read, so unchanged values are not rewritten
 local diskChecked = {} -- name -> true once the folder was checked for them this load
+local liveClass, liveGs = {}, {} -- name -> value actually read from the game in this raid (never from disk)
+local savedThisRaid = {} -- name -> true once their file was written for this raid
 
 local function fileNameFor(name)
     return (name:gsub("[^%w_%-]", "_"))
@@ -187,13 +189,19 @@ end
 
 local function saveToDisk(name, class, gs)
     local last = savedOnDisk[name]
-    if last ~= nil and last.class == class and last.gs == gs then return end
+    if last ~= nil and last.class == class and last.gs == gs then return true end -- file already has these values
     local record = {name = name, className = class, gearScore = gs}
     local ok = safe("File:Write", function() api.File:Write(playerFile(name), record) return true end)
     if ok then
         savedOnDisk[name] = {class = class, gs = gs}
         log("saved " .. name .. ": " .. tostring(class) .. " gs=" .. tostring(gs))
     end
+    return ok and true or false
+end
+
+-- A new raid starts when the raid is left or disbanded (nobody but you left): everyone may be saved once more.
+local function startNewRaid()
+    liveClass, liveGs, savedThisRaid = {}, {}, {}
 end
 
 -- Everyone in the raid as {name, slot, class, role, gs}. A class or gear score that cannot be read
@@ -219,8 +227,13 @@ local function readRoster()
                     if classCache[name] == nil and diskClass ~= nil then classCache[name] = diskClass end
                     if gearCache[name] == nil and diskGs ~= nil then gearCache[name] = diskGs end
                 end
-                -- a real read this pass (not a cached or disk value): keep it on disk
-                if class ~= nil or gs ~= nil then saveToDisk(name, classCache[name], gearCache[name]) end
+                -- Only real reads count (not cached or disk values). Once both class and gear score have
+                -- been read live in this raid, write them once; the file is not touched again this raid.
+                if class ~= nil then liveClass[name] = class end
+                if gs ~= nil then liveGs[name] = gs end
+                if not savedThisRaid[name] and liveClass[name] ~= nil and liveGs[name] ~= nil then
+                    if saveToDisk(name, liveClass[name], liveGs[name]) then savedThisRaid[name] = true end
+                end
             end
             local knownClass = classCache[name]
             local skillIds = readSkillsetIds(unit)
@@ -242,6 +255,7 @@ local function readRoster()
             }
         end
     end
+    if #members <= 1 then startNewRaid() end -- alone: the raid is over
     return members
 end
 
@@ -453,7 +467,10 @@ end
 -- One pass: read the raid and make at most one move. Returns "moved" after sending a move,
 -- "waiting" while the previous move has not shown up in the roster yet, false otherwise.
 local function runOnce()
-    if not inRaid() then return false end
+    if not inRaid() then
+        startNewRaid()
+        return false
+    end
     if not Authority.CanManage() then
         -- not raid lead: no sorting, but still scan so "Save GS+Class" keeps recording
         if settings.Get("RaidSortSaveGsClass") then readRoster() end
@@ -580,6 +597,7 @@ local function onTeamChanged()
     if not live then return end
     local names = rosterNames()
     if names == knownNames then return end
+    if not names:find(",", 1, true) then startNewRaid() end -- left or disbanded: next raid saves again
     knownNames = names
     resetRun()
     timer = cfg.settleMs
@@ -592,6 +610,7 @@ function RaidSort.OnLoad()
     knownNames = nil
     dumped = {}
     savedOnDisk, diskChecked = {}, {}
+    startNewRaid()
     resetRun()
     resetProbe()
     buildRoleLookup()

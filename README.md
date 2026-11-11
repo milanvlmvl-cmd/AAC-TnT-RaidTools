@@ -38,7 +38,7 @@ The addon reads everyone in the raid, plans the ideal layout and moves one membe
 
 ### Save GS+Class
 
-Tick **Save GS+Class** in the Raid Sort window (off by default) to keep each player's real gear score and class on disk. Whenever a member is in range and can be read, their values are written to `AAC-TnT-RaidTools/players/<name>.dat` (only when they changed). Before sorting, a player whose class or gear score cannot be read and is not cached in memory is looked up in that folder, so people out of range (or after a reload) are still sorted by their last known values instead of last.
+Tick **Save GS+Class** in the Raid Sort window (off by default) to keep each player's real gear score and class on disk. Once a member has been read live with both a gear score and a class, their values are written to `AAC-TnT-RaidTools/players/<name>.dat`, once per raid (the file is not touched again until you leave or disband and start a new raid, and is skipped if the values are unchanged). Cached and disk values are never written back. Before sorting, a player whose class or gear score cannot be read and is not cached in memory is looked up in that folder, so people out of range (or after a reload) are still sorted by their last known values instead of last.
 
 ### Role detection
 
