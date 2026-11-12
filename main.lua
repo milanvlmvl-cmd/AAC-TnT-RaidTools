@@ -1,8 +1,6 @@
 -- TnT Raid Tools Main Module
 local constants = require("AAC-TnT-RaidTools/core/constants")
-local Matching = require("AAC-TnT-RaidTools/core/matching")
 local settings = require("AAC-TnT-RaidTools/core/settings")
-local trace = require("AAC-TnT-RaidTools/core/trace")
 local Ticker = require("AAC-TnT-RaidTools/core/ticker")
 local raidtools = require("AAC-TnT-RaidTools/features/raidtools")
 local raidsort = require("AAC-TnT-RaidTools/features/raidsort")
@@ -16,13 +14,8 @@ local TnTRaidTools = {
     desc = "Raid invites and lead handoff tools"
 }
 
-trace.Add("main.lua loaded")
-
 function TnTRaidTools.OnLoad()
-    raidtools.Log("Starting version " .. TnTRaidTools.version)
     settings.Reset()
-    -- every Matching.check writes one line to the trace file
-    Matching.trace = trace.Add
     AfkWatch.Reset()
     raidtools.OnLoad()
     raidsort.OnLoad()
@@ -30,12 +23,10 @@ function TnTRaidTools.OnLoad()
     Ticker.Add(AfkWatch.Update)
     Ticker.Add(raidsort.Update)
     Ticker.Start()
-    local ok, err = pcall(panel.OnLoad)
-    raidtools.Log(ok and "panel built" or ("panel failed: " .. tostring(err)))
+    pcall(panel.OnLoad)
 end
 
 function TnTRaidTools.OnUnload()
-    Matching.trace = nil
     Ticker.Stop()
     raidsort.OnUnload()
     raidtools.OnUnload()

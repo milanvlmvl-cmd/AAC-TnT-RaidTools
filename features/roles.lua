@@ -1,6 +1,5 @@
 local api = require("api")
 local constants = require("AAC-TnT-RaidTools/core/constants")
-local trace = require("AAC-TnT-RaidTools/core/trace")
 local Guard = require("AAC-TnT-RaidTools/core/guard")
 
 -- What the raid sort knows about one player: class, skillsets, gear score and the role they imply.
@@ -8,7 +7,7 @@ local Guard = require("AAC-TnT-RaidTools/core/guard")
 local Roles = {}
 
 local cfg = constants.raidSort
-local safe = Guard.New(trace.Logger("roles"))
+local safe = Guard.Silent
 
 local roleByClass = {} -- lowercase class name -> "tank" | "healer" (explicit class lists)
 for _, name in ipairs(cfg.healerClasses) do roleByClass[name:lower()] = "healer" end

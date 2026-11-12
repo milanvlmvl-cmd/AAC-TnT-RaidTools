@@ -1,6 +1,6 @@
 local api = require("api")
 local constants = require("AAC-TnT-RaidTools/core/constants")
-local trace = require("AAC-TnT-RaidTools/core/trace")
+local Notify = require("AAC-TnT-RaidTools/core/notify")
 local settings = require("AAC-TnT-RaidTools/core/settings")
 
 -- The game exposes no AFK flag, so AFK is guessed from movement. Every cfg.intervalMs your own world
@@ -60,10 +60,10 @@ local function check()
     local event
     state, event = AfkWatch.Step(state, x, y, z)
     if event == "afk" then
-        trace.Announce("afk", "You are AFK (" .. state.points .. " points, no movement for about "
+        Notify.Chat("You are AFK (" .. state.points .. " points, no movement for about "
             .. math.floor(state.points * cfg.intervalMs / 1000) .. "s)")
     elseif event == "back" then
-        trace.Announce("afk", "You moved again, no longer AFK")
+        Notify.Chat("You moved again, no longer AFK")
     end
 end
 

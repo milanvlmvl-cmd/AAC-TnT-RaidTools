@@ -1,17 +1,15 @@
 local api = require("api")
 local constants = require("AAC-TnT-RaidTools/core/constants")
-local trace = require("AAC-TnT-RaidTools/core/trace")
 local Guard = require("AAC-TnT-RaidTools/core/guard")
 local Roles = require("AAC-TnT-RaidTools/features/roles")
 
 -- "Save GS+Class": real scanned values are kept on disk (constants.raidSort.playersFolder, one .dat
 -- file per player) and used for a player whose class or gear score cannot be read right now
--- (out of range). Files written by the dump test mode have the same className / gearScore fields.
+-- (out of range).
 local PlayerStore = {}
 
 local folder = constants.raidSort.playersFolder
-local log = trace.Logger("playerstore")
-local safe = Guard.New(log)
+local safe = Guard.Silent
 
 local savedOnDisk = {} -- name -> {class, gs} last written or read, so unchanged values are not rewritten
 local diskChecked = {} -- name -> true once the folder was checked for them this load
@@ -37,10 +35,7 @@ local function save(name, class, gs)
     if last ~= nil and last.class == class and last.gs == gs then return true end -- file already has these values
     local record = {name = name, className = class, gearScore = gs}
     local ok = safe("File:Write", function() api.File:Write(PlayerStore.Path(name), record) return true end)
-    if ok then
-        savedOnDisk[name] = {class = class, gs = gs}
-        log("saved " .. name .. ": " .. tostring(class) .. " gs=" .. tostring(gs))
-    end
+    if ok then savedOnDisk[name] = {class = class, gs = gs} end
     return ok and true or false
 end
 

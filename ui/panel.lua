@@ -142,7 +142,7 @@ function Panel.OnLoad()
     inviteList = InviteList.Create(root) -- left side of the raid window, with the + button
     sortWindow = SortWindow.Create(root) -- right side of the raid window
 
-    -- header bar (debug logging is toggled by whispering "/debug" to yourself, see raidtools.lua)
+    -- header bar
     make("label", "heading", panel, 10, 8, 300, 24, "TnT RAID TOOLS")
     Widgets.Divider(panel, "divider_header", 10, 36, dims.width - 20, 2)
 

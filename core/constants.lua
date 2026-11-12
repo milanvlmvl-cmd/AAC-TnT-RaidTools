@@ -65,8 +65,8 @@ local Constants = {
             romance = "Songcraft", love = "Vitalism",
         },
         -- Last resort for a player whose class and skillsets cannot be read: the role colour they set in
-        -- the raid window. Maps the id Team:GetRole returns to "tank" / "healer" / "other". The ids are
-        -- logged as color=<id> in the raid sort trace; an id not listed here is ignored.
+        -- the raid window. Maps the id Team:GetRole returns to "tank" / "healer" / "other". An id
+        -- not listed here is ignored.
         roleColors = {[0] = "other", [1] = "tank", [2] = "healer", [3] = "other"}, -- 0 blue, 1 green, 2 pink, 3 red
 
         -- Class style: "others" are sub-sorted by the first skillset in this list that they have (earlier =
@@ -78,14 +78,6 @@ local Constants = {
         -- (relative to the addons folder) and reads it back for a player whose class or gear score
         -- cannot be read right now.
         playersFolder = "AAC-TnT-RaidTools/players",
-
-        -- Test only (see features/raidsort_debug.lua). While enabled, turning the raid sort on does NOT
-        -- sort. It writes one file per raid member to playersFolder with their class name, their three
-        -- skillset ids and names, and the raw unit info, so skillset names can be checked against the game.
-        dump = {enabled = false},
-        -- Test only: while enabled, turning the raid sort on moves `name` to each of `slots` in turn and
-        -- logs where they actually land (and who was in the way). No sorting happens while on.
-        probe = {enabled = false, name = "Madpeter", slots = {1, 6, 11}},
     },
 
     -- ---- AFK guess -----------------------------------------------------------------------------

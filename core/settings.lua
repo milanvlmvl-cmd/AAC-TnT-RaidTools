@@ -62,9 +62,6 @@ local defaultSettings = {
 
     RaidSortSaveGsClass = false, -- save a scanned player's real gear score + class to the players folder, and use it when they cannot be read
 
-    -- Diagnostics
-    DebugChat = false, -- extra trace lines for every chat event; toggled by whispering "/debug" to yourself
-
     -- Lead pass
     LeadPhrase = "lead",
     LeadChannel = "whisper", -- whisper | guild | raid

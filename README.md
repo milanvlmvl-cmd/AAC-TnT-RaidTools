@@ -80,21 +80,16 @@ Saved under the addon folder name (`AAC-TnT-RaidTools`) using flat keys.
 | `RaidSortStyle` | `2` = Party (default), `1` = Class |
 | `RaidSortSaveGsClass` | Save scanned gear score + class to the `players` folder |
 | `DisableInvitesWhenAfk`, `AfkMinutes` | Pause invites and raid sort while AFK, and the minutes (2, 5 or 10) before that counts |
-| `DebugChat` | Extra debug tracing |
 
 Settings saved by versions before the `Invites` list (`Invite1*` / `Invite2*` keys) are no longer migrated: re-create those invites with the **+** button.
-
-## Debugging
-
-Whisper `/debug` to yourself to toggle debug logging. While it is on, the addon writes a rolling trace (last 150 lines) of chat events, invite checks, authority changes and raid sort moves to `debug.lua` in the addon folder. Nothing is written while it is off.
 
 ## Development
 
 Code layout:
 
 - `main.lua` - addon entry point; wires the modules together and owns the single `UPDATE` callback (`core/ticker.lua`).
-- `core/` - game-independent logic: `matching` (names and phrases), `settings`, `sortplan` (raid layout planner), `constants`, plus small helpers (`trace`, `guard`, `roster`, `authority`, `ticker`).
-- `features/` - `raidtools` (invites, lead pass), `raidsort` (the sorter), `roles` and `playerstore` (what is known about a player), `afkwatch`, and `raidsort_debug` (test-only dump / probe modes, off by default in `core/constants.lua`).
+- `core/` - game-independent logic: `matching` (names and phrases), `settings`, `sortplan` (raid layout planner), `constants`, plus small helpers (`notify`, `guard`, `roster`, `authority`, `ticker`).
+- `features/` - `raidtools` (invites, lead pass), `raidsort` (the sorter), `roles` and `playerstore` (what is known about a player) and `afkwatch`.
 - `ui/` - the panel, invite list, list editors, raid sort window and shared `widgets`.
 
 The tests cover matching, settings, the AFK counter and the raid sort planner (it plays the planner against a model of how the game places members). They need only a Lua 5.1 / LuaJIT interpreter and run in CI:

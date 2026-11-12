@@ -1,5 +1,5 @@
 local api = require("api")
-local trace = require("AAC-TnT-RaidTools/core/trace")
+local Notify = require("AAC-TnT-RaidTools/core/notify")
 local Guard = require("AAC-TnT-RaidTools/core/guard")
 local Roster = require("AAC-TnT-RaidTools/core/roster")
 
@@ -31,7 +31,7 @@ function Authority.IsLead()
     return Guard.Silent("UnitTeamAuthority", function() return api.Unit:UnitTeamAuthority("player") end) == "leader"
 end
 
--- true when invites and sorting may act. Logs, and writes one chat line, each time that flips.
+-- true when invites and sorting may act. Writes one chat line each time that flips.
 function Authority.CanManage()
     local count = Roster.Count()
     local lead = Authority.IsLead()
@@ -41,7 +41,7 @@ function Authority.CanManage()
         lastAllowed = allowed
         for _, fn in ipairs(listeners) do pcall(fn, allowed) end
         if first and allowed then return allowed end -- nothing to report on the first, normal, check
-        trace.Announce("authority", allowed
+        Notify.Chat(allowed
             and ("raid tools active (" .. (lead and "you are lead" or "not in a raid") .. ")")
             or ("raid tools paused: you are not raid lead (raid of " .. count .. "). Auto invites and raid sort are off until you have lead."))
     end

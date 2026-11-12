@@ -9,19 +9,4 @@ function Guard.Silent(_, fn)
     return nil
 end
 
--- Same, but logs each distinct failure once through log(text).
-function Guard.New(log)
-    local logged = {}
-    return function(label, fn)
-        local ok, value = pcall(fn)
-        if ok then return value end
-        local message = label .. " failed: " .. tostring(value)
-        if not logged[message] then
-            logged[message] = true
-            log(message)
-        end
-        return nil
-    end
-end
-
 return Guard

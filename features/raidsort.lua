@@ -1,7 +1,6 @@
 local api = require("api")
 local constants = require("AAC-TnT-RaidTools/core/constants")
 local settings = require("AAC-TnT-RaidTools/core/settings")
-local trace = require("AAC-TnT-RaidTools/core/trace")
 local Guard = require("AAC-TnT-RaidTools/core/guard")
 local Roster = require("AAC-TnT-RaidTools/core/roster")
 local SortPlan = require("AAC-TnT-RaidTools/core/sortplan")
@@ -9,7 +8,6 @@ local Authority = require("AAC-TnT-RaidTools/core/authority")
 local AfkWatch = require("AAC-TnT-RaidTools/features/afkwatch")
 local Roles = require("AAC-TnT-RaidTools/features/roles")
 local PlayerStore = require("AAC-TnT-RaidTools/features/playerstore")
-local Debug = require("AAC-TnT-RaidTools/features/raidsort_debug")
 
 -- When enabled, keeps the raid ordered (layout depends on the sort style, see core/sortplan.lua),
 -- each group sorted by gear score (highest first). It re-reads the raid every few seconds (a gear
@@ -31,17 +29,14 @@ local pending = nil -- {name, from, to, at}
 local halted = false -- a move never took effect (and retrying did not help): stop until the roster changes
 local queued = nil -- a planned move waiting out cfg.sendDelayMs before it is sent: {name, from, to}
 local failedMoves = 0 -- consecutive moves that never showed up in the roster; reset when one does
-local loggedRoster = nil -- roster signature last written to the trace (nil: write it again)
+local seenRoster = nil -- roster signature as of the last pass (nil: treat the next one as new)
 local knownNames = nil -- roster signature as of the last join/leave seen
 
 -- last readable value per player name, used while they are out of range
 local gearCache, classCache, skillCache = {}, {}, {}
 
--- Sort trace lines (moves, roster changes, stops) are only written while debug logging is on.
-local log = trace.Logger("raidsort")
--- API calls can be missing in this game build or fail for out-of-range units: protected, each
--- distinct failure logged once.
-local safe = Guard.New(log)
+-- API calls can be missing in this game build or fail for out-of-range units: protected.
+local safe = Guard.Silent
 
 local function resetRun()
     halted, movesThisRun, pending, failedMoves, queued = false, 0, nil, 0, nil
@@ -94,16 +89,12 @@ end
 
 -- Whether we are in a raid (not a party). IsPartyRaid is missing in this game build, so fall back
 -- to IsPartyTeam, and if neither exists assume a raid.
-local raidCheckLogged = false
 local function inRaid()
     local team = api.Team
     local method, invert
     if type(team.IsPartyRaid) == "function" then method = "IsPartyRaid"
     elseif type(team.IsPartyTeam) == "function" then method, invert = "IsPartyTeam", true end
-    if method == nil then
-        if not raidCheckLogged then raidCheckLogged = true; log("no IsPartyRaid/IsPartyTeam in this build; assuming raid") end
-        return true
-    end
+    if method == nil then return true end
     local result = safe(method, function() return team[method](team) end)
     if result == nil then return true end -- could not tell: do not block the sort
     if invert then return not result end
@@ -114,12 +105,6 @@ local function signatureOf(members)
     local names = {}
     for i, m in ipairs(members) do names[i] = m.name end
     return Roster.Join(names)
-end
-
-local function describe(m)
-    return m.name .. "(" .. m.class .. "/" .. m.role
-        .. ((m.roleSource == "skills" or m.roleSource == "color") and ("[" .. m.roleSource .. "]") or "")
-        .. " color=" .. tostring(m.color) .. " gs=" .. m.gs .. " slot=" .. m.slot .. ")"
 end
 
 -- Confirm or fail the move sent earlier. Returns "waiting" while it may still show up, "halt" when
@@ -135,21 +120,17 @@ local function checkPending(current)
     local failed = pending
     pending = nil
     failedMoves = failedMoves + 1
-    local text = failed.name .. " did not move from slot " .. failed.from .. " to " .. failed.to
-        .. " within " .. cfg.moveTimeoutMs .. "ms"
     if Authority.IsLead() and failedMoves <= cfg.maxRetries then
         -- we do have lead, so the move was lost or the layout changed under us: plan again
         -- from the roster as it is now (the next pass re-reads it)
-        log(text .. "; you are lead, rebuilding the plan (retry " .. failedMoves .. "/" .. cfg.maxRetries .. ")")
         return "waiting"
     end
     halted = true
-    log("stopping: " .. text .. (Authority.IsLead() and (" (" .. cfg.maxRetries .. " retries failed)") or " (you are not raid lead)"))
     return "halt"
 end
 
 -- One pass: read the raid and plan at most one move. Returns "queued" after planning a move (sent by
--- sendQueued), "moved" (debug probe only), "waiting" while the previous move has not shown up in the
+-- sendQueued), "waiting" while the previous move has not shown up in the
 -- roster yet, false otherwise.
 local function runOnce()
     if not inRaid() then
@@ -163,26 +144,16 @@ local function runOnce()
     end
     local members = readRoster()
     local signature = signatureOf(members)
-    if signature ~= loggedRoster then
-        if loggedRoster ~= nil and signature ~= knownNames then
+    if signature ~= seenRoster then
+        local missedEvent = seenRoster ~= nil and signature ~= knownNames
+        knownNames = signature
+        seenRoster = signature
+        resetRun()
+        if missedEvent then
             -- someone joined or left without the team event reaching us: settle first
-            knownNames = signature
-            loggedRoster = signature
-            resetRun()
             timer = cfg.settleMs
-            log("roster changed without an event; waiting " .. cfg.settleMs .. "ms to settle")
             return false
         end
-        knownNames = signature
-        loggedRoster = signature
-        resetRun()
-        local parts = {}
-        for _, m in ipairs(members) do parts[#parts + 1] = describe(m) end
-        log("roster changed: " .. table.concat(parts, " "))
-    end
-    if cfg.dump.enabled then
-        Debug.DumpRoster(members)
-        return false -- no sorting while dumping
     end
     if halted then return false end
 
@@ -193,33 +164,25 @@ local function runOnce()
     if state == "waiting" then return "waiting" end
     if state == "halt" then return false end
 
-    if cfg.probe.enabled then return Debug.RunProbe(current, clock) end
-
     local desired
     if settings.Get("RaidSortStyle") == constants.sortStyle.party then
         desired = SortPlan.BuildStyle2(members, cfg)
     else
         desired = SortPlan.Build(members, cfg)
     end
-    local from, to, why = SortPlan.NextMove(current, desired, cfg.maxMembers, cfg.groupSize)
+    local from, to = SortPlan.NextMove(current, desired, cfg.maxMembers, cfg.groupSize)
     if from == nil then
-        if movesThisRun > 0 then log("raid sorted after " .. movesThisRun .. " moves") end
         movesThisRun = 0
         return false
     end
     if movesThisRun >= cfg.maxMovesPerRun then
         halted = true
-        log("stopping: reached " .. cfg.maxMovesPerRun .. " moves in one run")
         return false
     end
 
     movesThisRun = movesThisRun + 1
-    local mover, displaced = current[from], current[to]
-    log("move " .. mover .. " slot " .. from .. " -> " .. to
-        .. (displaced and (" (swaps with " .. displaced .. ")") or " (free slot)")
-        .. (why and (" [" .. why .. "]") or "") .. " #" .. movesThisRun)
     -- sent after cfg.sendDelayMs, see sendQueued
-    queued = {name = mover, from = from, to = to}
+    queued = {name = current[from], from = from, to = to}
     return "queued"
 end
 
@@ -252,7 +215,6 @@ function RaidSort.Update(dt)
     end
     local result = safe("raid sort pass", runOnce)
     if result == "queued" then timer = cfg.sendDelayMs
-    elseif result == "moved" then timer = cfg.moveDelayMs
     elseif result == "waiting" then timer = cfg.pollMs
     else timer = cfg.recheckMs end
 end
@@ -273,14 +235,11 @@ end
 function RaidSort.OnLoad()
     live = true
     timer = cfg.settleMs
-    loggedRoster = nil
+    seenRoster = nil
     knownNames = nil
     PlayerStore.Reset()
-    Debug.ResetDump()
-    Debug.ResetProbe()
     resetRun()
     api.On("TEAM_MEMBERS_CHANGED", onTeamChanged)
-    log("raid sort ready (enabled=" .. tostring(settings.Get("RaidSortEnabled")) .. ")")
 end
 
 function RaidSort.OnUnload()
@@ -292,11 +251,8 @@ end
 function RaidSort.SetEnabled(enabled)
     settings.Update("RaidSortEnabled", enabled)
     resetRun()
-    Debug.ResetProbe()
-    Debug.ResetDump()
-    loggedRoster = nil -- log the roster again on the next pass
+    seenRoster = nil -- treat the next pass as a fresh roster
     timer = 0
-    log("raid sort " .. (enabled and "enabled" or "disabled"))
 end
 
 -- Called when the "Save GS+Class" checkbox changes: re-read the raid at the next update.
@@ -304,7 +260,6 @@ function RaidSort.SetSaveGsClass(enabled)
     settings.Update("RaidSortSaveGsClass", enabled)
     PlayerStore.ForgetChecked()
     timer = 0
-    log("save gs+class " .. (enabled and "on" or "off"))
 end
 
 -- Called when the sort style changes: re-plan at the next update.
@@ -312,7 +267,6 @@ function RaidSort.SetStyle(style)
     settings.Update("RaidSortStyle", style)
     resetRun()
     timer = 0
-    log("raid sort style " .. tostring(style))
 end
 
 return RaidSort

@@ -1,7 +1,6 @@
 local constants = require("AAC-TnT-RaidTools/core/constants")
 local settings = require("AAC-TnT-RaidTools/core/settings")
 local Widgets = require("AAC-TnT-RaidTools/ui/widgets")
-local trace = require("AAC-TnT-RaidTools/core/trace")
 local AfkWatch = require("AAC-TnT-RaidTools/features/afkwatch")
 
 -- The invite list: a window on the left of the raid window holding any number of invites as cards.
@@ -255,7 +254,6 @@ function InviteList.Create(root)
         for _, other in ipairs(list) do other.Collapsed = true end -- the new invite is the one open card
         list[#list + 1] = settings.NewInvite()
         local activeCount = settings.SetInvites(list) -- the new (active) invite lands after the last active one
-        trace.Add("[invites] + pressed, now " .. #list .. " invites")
         Widgets.PlayStacked(constants.actionSounds.addInvite)
         first = activeCount -- clamped to the furthest scroll, so the new invite is in view
         layout()
@@ -264,7 +262,6 @@ function InviteList.Create(root)
     -- Called when the global switch changes (and once at the start).
     function self.SetGlobalEnabled(enabled)
         refreshNotice()
-        trace.Add("[invites] global switch " .. (enabled and "on" or "off") .. ": + button " .. (enabled and "shown" or "hidden"))
         addButton.Show(enabled) -- no adding invites while they are globally disabled
     end
     self.RefreshNotice = refreshNotice -- called when the AFK state or its setting changes

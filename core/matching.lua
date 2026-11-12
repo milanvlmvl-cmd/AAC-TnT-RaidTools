@@ -1,7 +1,6 @@
 local constants = require("AAC-TnT-RaidTools/core/constants")
 
--- Name and chat-phrase matching for the invites and the lead pass (pure, no game calls besides the
--- optional trace hook).
+-- Name and chat-phrase matching for the invites and the lead pass (pure, no game calls).
 local Matching = {}
 
 local function clean(value)
@@ -51,10 +50,10 @@ function Matching.channelAllowed(channelId, selection)
     return wanted == tonumber(channelId)
 end
 
--- Optional hook: set Matching.trace = function(text) to receive one line per check (hooked up in main.lua).
-Matching.trace = nil
-
-local function runCheck(message, channelId, config, blacklist, whitelist)
+-- Whether an invite config accepts a chat message: returns true, or false plus the reason it was rejected.
+-- config: channel, match, phrase, blacklistEnabled, whitelistEnabled; blacklist / whitelist are
+-- lookup tables from Matching.lookup.
+function Matching.check(message, channelId, config, blacklist, whitelist)
     if not Matching.channelAllowed(channelId, config.channel) then
         return false, "channel mismatch (message channel " .. tostring(channelId) .. ", wanted " .. tostring(config.channel) .. ")"
     end
@@ -66,21 +65,6 @@ local function runCheck(message, channelId, config, blacklist, whitelist)
         return false, "phrase mismatch (\"" .. tostring(message.text) .. "\" vs " .. tostring(config.match) .. " \"" .. tostring(config.phrase) .. "\")"
     end
     return true
-end
-
--- Whether an invite config accepts a chat message: returns true, or false plus the reason it was rejected.
--- config: channel, match, phrase, blacklistEnabled, whitelistEnabled; blacklist / whitelist are
--- lookup tables from Matching.lookup.
-function Matching.check(message, channelId, config, blacklist, whitelist)
-    local ok, reason = runCheck(message, channelId, config, blacklist, whitelist)
-    if Matching.trace then
-        Matching.trace("check name=" .. tostring(message.name) .. " text=\"" .. tostring(message.text) .. "\" channel=" .. tostring(channelId)
-            .. " | wantChannel=" .. tostring(config.channel)
-            .. " phrase=\"" .. tostring(config.phrase) .. "\" match=" .. tostring(config.match)
-            .. " blacklist=" .. tostring(config.blacklistEnabled) .. " whitelist=" .. tostring(config.whitelistEnabled)
-            .. " => " .. (ok and "MATCH" or ("no: " .. reason)))
-    end
-    return ok, reason
 end
 
 return Matching
