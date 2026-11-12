@@ -5,7 +5,7 @@ local Constants = {
     addonName = "AAC-TnT-RaidTools", -- addon folder name, also the GetSettings id
     folderPath = api.baseDir .. "/AAC-TnT-RaidTools/",
     displayName = "TnT Raid Tools",
-    version = "0.1.7",
+    version = "0.1.8",
     legacyInviteSlots = 2, -- the fixed Invite1* / Invite2* keys older versions saved (migrated into the Invites list)
     -- Chat channel id each selection matches; "*" matches any channel id.
     channels = {all = "*", nation = 6, faction = 14, guild = 7, whisper = -3, raid = 5},

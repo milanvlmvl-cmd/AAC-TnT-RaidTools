@@ -107,7 +107,29 @@ function Settings.GetInvites()
     return list
 end
 
+-- Move switched-off (Zzz) invites below the active ones, keeping the order inside each group.
+-- Sorts `list` in place; returns the number of active invites and whether anything moved.
+function Settings.SortInvites(list)
+    local active, off = {}, {}
+    for _, invite in ipairs(list) do
+        if invite.Active == false then off[#off + 1] = invite else active[#active + 1] = invite end
+    end
+    local moved = false
+    for i, invite in ipairs(active) do
+        if list[i] ~= invite then moved = true end
+        list[i] = invite
+    end
+    for i, invite in ipairs(off) do
+        if list[#active + i] ~= invite then moved = true end
+        list[#active + i] = invite
+    end
+    return #active, moved
+end
+
+-- Active invites are always kept at the top of the stored list (first match wins, so this does not
+-- change which invite fires: switched-off ones never match).
 function Settings.SetInvites(list)
+    Settings.SortInvites(list)
     return Settings.Update("Invites", list)
 end
 

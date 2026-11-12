@@ -12,7 +12,7 @@ Everything is built into the raid manager: a settings panel under the raid windo
 
 Anyone who says an invite keyword in chat is invited to the raid.
 
-- Press **+** in the top left of the raid window to add an invite. **X** deletes it, the arrow icon collapses or expands its card, and **Zzz** switches that one invite off without deleting it.
+- Press **+** in the top left of the raid window to add an invite. **X** deletes it, the arrow icon collapses or expands its card, and **Zzz** switches that one invite off without deleting it. Switched-off invites sink below the active ones (switching one back on moves it up), so active invites are always at the top of the list.
 - Each invite has:
   - **Phrase** - the keyword.
   - **Channel** - `all`, `nation`, `faction`, `guild` or `whisper`.

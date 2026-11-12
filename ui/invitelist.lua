@@ -228,9 +228,10 @@ function InviteList.Create(root)
     local addButton = Widgets.IconButton("invite_add", root, "add.png", 6, 6, 26, function()
         local list = settings.GetInvites()
         list[#list + 1] = settings.NewInvite()
-        settings.SetInvites(list)
+        settings.SetInvites(list) -- the new (active) invite lands after the last active one
         trace.Add("[invites] + pressed, now " .. #list .. " invites")
-        first = math.huge -- clamped to the end, so the new invite is in view
+        local activeCount = settings.SortInvites(list)
+        first = activeCount -- clamped to the furthest scroll, so the new invite is in view
         layout()
     end)
 
@@ -241,6 +242,11 @@ function InviteList.Create(root)
         addButton.Show(enabled) -- no adding invites while they are globally disabled
     end
     self.window = window
+
+    -- saves from before active-first ordering: sort once
+    local saved = settings.GetInvites()
+    local _, moved = settings.SortInvites(saved)
+    if moved then settings.SetInvites(saved) end
 
     layout()
     self.SetGlobalEnabled(settings.Get("InvitesEnabled"))
