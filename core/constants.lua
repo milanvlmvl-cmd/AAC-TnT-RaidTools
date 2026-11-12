@@ -5,7 +5,7 @@ local Constants = {
     addonName = "AAC-TnT-RaidTools", -- addon folder name, also the GetSettings id
     folderPath = api.baseDir .. "/AAC-TnT-RaidTools/",
     displayName = "TnT Raid Tools",
-    version = "0.1.8",
+    version = "0.1.9",
     legacyInviteSlots = 2, -- the fixed Invite1* / Invite2* keys older versions saved (migrated into the Invites list)
     -- Chat channel id each selection matches; "*" matches any channel id.
     channels = {all = "*", nation = 6, faction = 14, guild = 7, whisper = -3, raid = 5},
@@ -18,6 +18,13 @@ local Constants = {
     -- Window below the raid window: the main panel (mainHeight) and the list editors that replace
     -- it while open (editorHeight). The raid window itself is never resized.
     panel = {width = 600, mainHeight = 180, editorHeight = 360, gap = 4},
+    buttonSound = "auction_put_up", -- click sound of the icon / checkbox buttons (a DING in AAC)
+    -- Two sounds played together for an action (SetSounds keys).
+    actionSounds = {
+        expand = {"option", "mail"}, -- opening an invite card
+        collapse = {"option", "skill_book"}, -- collapsing an invite card
+        addInvite = {"store", "raid_team"}, -- the + button
+    },
     -- Raid sort: tanks / healers / everyone else are placed in these raid groups (5 slots each).
     -- A class in both lists counts as a tank (tank list is checked first).
     raidSort = {

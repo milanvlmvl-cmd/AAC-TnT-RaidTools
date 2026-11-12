@@ -77,6 +77,17 @@ function InviteList.Create(root)
         return math.max(index, 1)
     end
 
+    -- Scroll down just far enough that invite `index` is fully in view (never past the invite itself).
+    local function scrollToFit(index)
+        local list = invites()
+        while first < index do
+            local bottom = 0
+            for i = first, index do bottom = bottom + cardHeight(list[i]) + (i > first and gap or 0) end
+            if bottom <= viewHeight then break end
+            first = first + 1
+        end
+    end
+
     local function buildCard(k)
         local id = "inv" .. k
         local card = {index = 0}
@@ -88,9 +99,18 @@ function InviteList.Create(root)
         card.toggle = Widgets.IconButton(id .. "_toggle", w, "collapse.png", x, 5, 25, function()
             local invite = invites()[card.index]
             if invite == nil then return end
-            setField(card.index, "Collapsed", not invite.Collapsed)
+            Widgets.PlayStacked(invite.Collapsed and constants.actionSounds.expand or constants.actionSounds.collapse)
+            if invite.Collapsed then
+                -- opening one collapses all the others: only one card is open at a time
+                local list = settings.GetInvites()
+                for i, other in ipairs(list) do other.Collapsed = i ~= card.index end
+                settings.SetInvites(list)
+                scrollToFit(card.index)
+            else
+                setField(card.index, "Collapsed", true)
+            end
             layout()
-        end)
+        end, true) -- quiet: the stacked action sound replaces the button's click sound
         -- clicking the Zzz icon or the title switches the invite on / off
         local function toggleActive()
             local invite = invites()[card.index]
@@ -227,13 +247,15 @@ function InviteList.Create(root)
     -- "+" in the top left corner of the raid panel
     local addButton = Widgets.IconButton("invite_add", root, "add.png", 6, 6, 26, function()
         local list = settings.GetInvites()
+        for _, other in ipairs(list) do other.Collapsed = true end -- the new invite is the one open card
         list[#list + 1] = settings.NewInvite()
         settings.SetInvites(list) -- the new (active) invite lands after the last active one
         trace.Add("[invites] + pressed, now " .. #list .. " invites")
+        Widgets.PlayStacked(constants.actionSounds.addInvite)
         local activeCount = settings.SortInvites(list)
         first = activeCount -- clamped to the furthest scroll, so the new invite is in view
         layout()
-    end)
+    end, true) -- quiet: the stacked sound replaces the button's click sound
 
     -- Called when the global switch changes (and once at the start).
     function self.SetGlobalEnabled(enabled)
@@ -246,6 +268,14 @@ function InviteList.Create(root)
     -- saves from before active-first ordering: sort once
     local saved = settings.GetInvites()
     local _, moved = settings.SortInvites(saved)
+    -- saves from before one-open-at-a-time: keep only the first open card open
+    local seenOpen = false
+    for _, invite in ipairs(saved) do
+        if not invite.Collapsed then
+            if seenOpen then invite.Collapsed = true; moved = true end
+            seenOpen = true
+        end
+    end
     if moved then settings.SetInvites(saved) end
 
     layout()

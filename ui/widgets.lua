@@ -9,6 +9,49 @@ local created = {}
 
 Widgets.textEvents = textEvents
 
+-- Click sound of the icon buttons, checkboxes and click areas.
+local function useButtonSound(button)
+    if button.SetSounds then button:SetSounds(constants.buttonSound) end
+end
+
+-- A sound player, done the way WorldSatNav plays its stacked alert sound (helpers/sound.lua): addons
+-- get no "play this sound" call, only SetSounds themes, and a window plays its theme when the engine
+-- opens it. So a player is a hidden 1x1 window carrying the key. Play silences it while it is hidden
+-- (no close sound, and re-showing with the same key fires the open sound again), sets the key and
+-- opens it. Make one player per sound that has to overlap with another; Play on two of them in the
+-- same call stacks the sounds.
+-- Returns {Play(key)}; Play returns true when the window was opened with the key, else false and the
+-- reason (the game does not say whether the key was a real theme).
+function Widgets.SoundPlayer(id)
+    local player = {}
+    local fullId = idPrefix .. "_" .. id
+    local ok, w = pcall(function() return api.Interface:CreateEmptyWindow(fullId) end)
+    if not ok or w == nil then
+        function player.Play() return false, "could not create a sound window: " .. tostring(w) end
+        return player
+    end
+    created[#created + 1] = w
+    pcall(function()
+        w:AddAnchor("TOPLEFT", "UIParent", 0, 0)
+        w:SetExtent(1, 1)
+        w:SetCloseOnEscape(false)
+        w:Show(false)
+    end)
+    function player.Play(key)
+        if key == nil or key == "" then return false, "silent key" end
+        if w.SetSounds == nil then return false, "window has no SetSounds" end
+        local done, err = pcall(function()
+            w:SetSounds("")
+            if w:IsVisible() then w:Show(false) end
+            w:SetSounds(key)
+            w:Show(true)
+        end)
+        if not done then return false, tostring(err) end
+        return true
+    end
+    return player
+end
+
 function Widgets.Make(kind, id, parent, x, y, width, height, text)
     local fullId = idPrefix .. "_" .. id
     local w
@@ -65,7 +108,6 @@ end
 function Widgets.Checkbox(id, parent, text, x, y, checked, onChange)
     local size = 25
     local textGap = 6 -- space between the box and its text
-    local sound = "auction_put_up"
     local texChecked = constants.folderPath .. "images/checkbox_checked.png"
     local texUnchecked = constants.folderPath .. "images/checkbox_unchecked.png"
     local fullId = idPrefix .. "_" .. id
@@ -79,7 +121,7 @@ function Widgets.Checkbox(id, parent, text, x, y, checked, onChange)
     local button = parent:CreateChildWidget("button", fullId .. "_btn", 0, true)
     button:AddAnchor("TOPLEFT", parent, x, y)
     button:SetExtent(size, size)
-    if button.SetSounds then button:SetSounds(sound) end
+    useButtonSound(button)
     button:Show(true)
     button:Enable(true)
     created[#created + 1] = button
@@ -105,7 +147,7 @@ function Widgets.Checkbox(id, parent, text, x, y, checked, onChange)
         labelButton = parent:CreateChildWidget("button", fullId .. "_textbtn", 0, true)
         labelButton:AddAnchor("TOPLEFT", button, size + textGap, 0)
         labelButton:SetExtent(textWidth, textHeight)
-        if labelButton.SetSounds then labelButton:SetSounds(sound) end
+        useButtonSound(labelButton)
         labelButton:Show(true)
         labelButton:Enable(true)
         created[#created + 1] = labelButton
@@ -178,7 +220,7 @@ function Widgets.ClickArea(id, parent, x, y, width, height, onClick)
     local button = parent:CreateChildWidget("button", idPrefix .. "_" .. id, 0, true)
     button:AddAnchor("TOPLEFT", parent, x, y)
     button:SetExtent(width, height)
-    if button.SetSounds then button:SetSounds("auction_put_up") end
+    useButtonSound(button)
     button:Show(true)
     button:Enable(true)
     created[#created + 1] = button
@@ -189,7 +231,8 @@ end
 
 -- Clickable picture: an image drawable with a transparent button on top (same trick as the checkbox).
 -- `texture` is a file name inside the images folder, e.g. "add.png". Returns {SetTexture(name), Show(visible)}.
-function Widgets.IconButton(id, parent, texture, x, y, size, onClick)
+-- quiet = true: the button makes no click sound of its own (the click plays its own sounds instead).
+function Widgets.IconButton(id, parent, texture, x, y, size, onClick, quiet)
     local fullId = idPrefix .. "_" .. id
     local icon = {}
     -- the picture and the button live in a small holder widget, so hiding the icon is one Show() on a
@@ -209,7 +252,11 @@ function Widgets.IconButton(id, parent, texture, x, y, size, onClick)
     local button = holder:CreateChildWidget("button", fullId .. "_btn", 0, true)
     button:AddAnchor("TOPLEFT", holder, 0, 0)
     button:SetExtent(size, size)
-    if button.SetSounds then button:SetSounds("auction_put_up") end
+    if quiet then
+        pcall(function() button:SetSounds("") end)
+    else
+        useButtonSound(button)
+    end
     button:Show(true)
     button:Enable(true)
     created[#created + 1] = button
@@ -233,8 +280,21 @@ function Widgets.SettingCheckbox(id, parent, text, x, y, key)
     end)
 end
 
+-- Two sounds at once (keyA on one player, keyB on another, started in the same call).
+-- `keys` is {keyA, keyB}. Returns whether each one was started.
+local stackPlayers
+function Widgets.PlayStacked(keys)
+    if stackPlayers == nil then
+        stackPlayers = {Widgets.SoundPlayer("stack1"), Widgets.SoundPlayer("stack2")}
+    end
+    local a = stackPlayers[1].Play(keys[1])
+    local b = stackPlayers[2].Play(keys[2])
+    return a, b
+end
+
 -- Free every widget made through Make(), newest first.
 function Widgets.FreeAll()
+    stackPlayers = nil -- their windows are in `created` and freed below
     for i = #created, 1, -1 do
         local w = created[i]
         w:ReleaseHandler("OnClick")
@@ -243,6 +303,7 @@ function Widgets.FreeAll()
         for _, event in ipairs(textEvents) do
             w:ReleaseHandler(event)
         end
+        pcall(function() w:SetSounds("") end) -- no close sound while being freed (sound windows stay open)
         w:Show(false)
         api.Interface:Free(w)
         created[i] = nil
