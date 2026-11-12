@@ -6,6 +6,7 @@ local ListPanel = require("AAC-TnT-RaidTools/ui/listpanel")
 local SortWindow = require("AAC-TnT-RaidTools/ui/sortwindow")
 local InviteList = require("AAC-TnT-RaidTools/ui/invitelist")
 local Authority = require("AAC-TnT-RaidTools/core/authority")
+local AfkWatch = require("AAC-TnT-RaidTools/features/afkwatch")
 
 local Panel = {}
 
@@ -59,6 +60,16 @@ local function sectionHeader(id, x, y, width, title, about, enabled, onChange)
     make("label", id .. "_about", panel, x, y + 26, width, 18, about)
 end
 
+local afkLabel -- "afk ticks:  N / 30"
+
+-- Runs after every AFK check and when the AFK setting changes: the tick label, and the "you are AFK"
+-- notices over the invite list and the raid sort window.
+local function refreshAfkLabel()
+    if afkLabel then afkLabel:SetText("afk ticks:  " .. AfkWatch.Points() .. " / " .. AfkWatch.Limit()) end
+    if inviteList then inviteList.RefreshNotice() end
+    if sortWindow then sortWindow.RefreshNotice() end
+end
+
 -- Left section: invites. The switch turns every invite in the invite list on or off (the list is kept);
 -- the name lists are shared by all invites. Each list editor has a PUBLIC / PRIVATE toggle at the top.
 local function buildInviteSection(x, y, width)
@@ -78,6 +89,21 @@ local function buildInviteSection(x, y, width)
         col = col + 1
     end
     make("label", "lists_hint", panel, x, y + 102, width, 18, "Click a list to add or remove names")
+
+    -- pause every invite and the raid sort while you look AFK (no movement for the chosen number of minutes)
+    Widgets.Checkbox("afk_disable", panel, "Disable if afk", x, y + 124, settings.Get("DisableInvitesWhenAfk"), function(checked)
+        settings.Update("DisableInvitesWhenAfk", checked)
+        refreshAfkLabel()
+    end)
+    local minuteLabels = {}
+    for i, minutes in ipairs(constants.afk.minuteOptions) do minuteLabels[i] = minutes .. " mins" end
+    Widgets.SettingDropdown(panel, x + 195, y + 124, 85, "AfkMinutes", constants.afk.minuteOptions, minuteLabels, function()
+        AfkWatch.Reset() -- the limit changed: count from scratch
+        refreshAfkLabel()
+    end)
+    afkLabel = make("label", "afk_ticks", panel, x + 31, y + 150, width - 31, 18, "")
+    refreshAfkLabel()
+    AfkWatch.SetListener(refreshAfkLabel)
 end
 
 -- Right section: lead pass (hand raid lead to whoever says the keyword).
@@ -151,7 +177,9 @@ end
 
 function Panel.OnUnload()
     Authority.Reset() -- drop the window listeners before the widgets are freed
+    AfkWatch.SetListener(nil)
     Widgets.FreeAll()
+    afkLabel = nil
     panel = nil
     inviteList = nil
     sortWindow = nil

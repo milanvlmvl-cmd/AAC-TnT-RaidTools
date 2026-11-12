@@ -47,6 +47,8 @@ local defaultSettings = {
     -- Always read a copy with GetInvites and write the whole list back with SetInvites.
     Invites = {},
     InvitesEnabled = true, -- global switch: when off, no invite sends anything (the list itself is kept)
+    DisableInvitesWhenAfk = false, -- while you count as AFK (see constants.afk) no invite sends anything
+    AfkMinutes = 2, -- minutes without movement before you count as AFK: one of constants.afk.minuteOptions
 
     -- Name lists (arrays), shared by both invites. One list per raid type.
     BlacklistPublic = {},
@@ -213,6 +215,7 @@ function Settings.LoadSettings()
         if loaded.LeadChannel == name then validLeadChannel = true end
     end
     if not validLeadChannel then loaded.LeadChannel = defaultSettings.LeadChannel end
+    if not contains(constants.afk.minuteOptions, loaded.AfkMinutes) then loaded.AfkMinutes = defaultSettings.AfkMinutes end
     if loaded.RaidSortStyle ~= 1 and loaded.RaidSortStyle ~= 2 then loaded.RaidSortStyle = defaultSettings.RaidSortStyle end
     return loaded
 end

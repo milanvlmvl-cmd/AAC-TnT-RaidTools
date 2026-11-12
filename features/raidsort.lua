@@ -4,6 +4,7 @@ local settings = require("AAC-TnT-RaidTools/core/settings")
 local trace = require("AAC-TnT-RaidTools/core/trace")
 local SortPlan = require("AAC-TnT-RaidTools/core/sortplan")
 local Authority = require("AAC-TnT-RaidTools/core/authority")
+local AfkWatch = require("AAC-TnT-RaidTools/features/afkwatch")
 
 -- When enabled, keeps the raid ordered: tanks in groups 1 and 6, healers in 5 and 10, everyone
 -- else in 2, 3, 4, 7, 8, 9, each group sorted by gear score (highest first). It re-reads the raid
@@ -569,10 +570,18 @@ end
 
 local function onUpdate(dt)
     if not live then return end
+    -- the AFK watch shares this callback (api.On keeps only one per event)
+    local watchOk, watchErr = pcall(AfkWatch.Update, dt)
+    if not watchOk then log("afk watch update failed: " .. tostring(watchErr)) end
     clock = clock + dt
     if not settings.Get("RaidSortEnabled") then return end
     if not settings.Get("InvitesEnabled") then
         -- the global switch is off: no sorting, and nothing half sent when it comes back on
+        queued, pending = nil, nil
+        return
+    end
+    if AfkWatch.Blocks() then
+        -- you are AFK (and "Disable if afk" is ticked): no sorting, nothing half sent when you are back
         queued, pending = nil, nil
         return
     end
@@ -605,6 +614,7 @@ end
 
 function RaidSort.OnLoad()
     live = true
+    AfkWatch.Reset()
     timer = cfg.settleMs
     rosterSignature = nil
     knownNames = nil
@@ -621,6 +631,7 @@ end
 
 function RaidSort.OnUnload()
     live = false
+    AfkWatch.Reset()
     api.On("UPDATE", function() return end)
     api.On("TEAM_MEMBERS_CHANGED", function() return end)
 end

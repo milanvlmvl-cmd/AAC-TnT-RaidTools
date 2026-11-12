@@ -6,6 +6,7 @@ local Widgets = {}
 local idPrefix = "tnt_raid_tools"
 local textEvents = {"OnChanged", "OnTextChanged", "OnFocusLost", "OnEnterPressed"}
 local created = {}
+local combos = {} -- combo boxes: freed separately, they may lack some of the handler calls FreeAll makes
 
 Widgets.textEvents = textEvents
 
@@ -280,6 +281,28 @@ function Widgets.SettingCheckbox(id, parent, text, x, y, key)
     end)
 end
 
+-- Dropdown (game combo box, same call as the automatic_raid_roles addon) bound to a setting.
+-- `values` are the stored setting values (in order), `labels` the texts shown for them.
+-- onChange(value) fires after the setting is saved.
+function Widgets.SettingDropdown(parent, x, y, width, key, values, labels, onChange)
+    local combo = W_CTRL.CreateComboBox(parent)
+    combo:AddAnchor("TOPLEFT", parent, x, y)
+    combo:SetExtent(width, 24)
+    combo.dropdownItem = labels
+    local current = settings.Get(key)
+    for i, value in ipairs(values) do
+        if value == current then combo:Select(i) end
+    end
+    function combo:SelectedProc()
+        local value = values[self:GetSelectedIndex()]
+        if value == nil then return end
+        settings.Update(key, value)
+        if onChange then onChange(value) end
+    end
+    combos[#combos + 1] = combo
+    return combo
+end
+
 -- Two sounds at once (keyA on one player, keyB on another, started in the same call).
 -- `keys` is {keyA, keyB}. Returns whether each one was started.
 local stackPlayers
@@ -295,6 +318,13 @@ end
 -- Free every widget made through Make(), newest first.
 function Widgets.FreeAll()
     stackPlayers = nil -- their windows are in `created` and freed below
+    for i = #combos, 1, -1 do
+        local combo = combos[i]
+        combo.SelectedProc = nil
+        pcall(function() combo:Show(false) end)
+        pcall(function() api.Interface:Free(combo) end)
+        combos[i] = nil
+    end
     for i = #created, 1, -1 do
         local w = created[i]
         w:ReleaseHandler("OnClick")

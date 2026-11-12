@@ -5,7 +5,7 @@ local Constants = {
     addonName = "AAC-TnT-RaidTools", -- addon folder name, also the GetSettings id
     folderPath = api.baseDir .. "/AAC-TnT-RaidTools/",
     displayName = "TnT Raid Tools",
-    version = "0.1.9",
+    version = "0.2.0",
     legacyInviteSlots = 2, -- the fixed Invite1* / Invite2* keys older versions saved (migrated into the Invites list)
     -- Chat channel id each selection matches; "*" matches any channel id.
     channels = {all = "*", nation = 6, faction = 14, guild = 7, whisper = -3, raid = 5},
@@ -17,7 +17,7 @@ local Constants = {
     sortStyleNames = {[1] = "Class", [2] = "Party"},
     -- Window below the raid window: the main panel (mainHeight) and the list editors that replace
     -- it while open (editorHeight). The raid window itself is never resized.
-    panel = {width = 600, mainHeight = 180, editorHeight = 360, gap = 4},
+    panel = {width = 600, mainHeight = 228, editorHeight = 360, gap = 4},
     buttonSound = "auction_put_up", -- click sound of the icon / checkbox buttons (a DING in AAC)
     -- Two sounds played together for an action (SetSounds keys).
     actionSounds = {
@@ -76,6 +76,11 @@ local Constants = {
         tankClasses = {"Skullknight", "Nightcloak", "Dreambreaker", "Abolisher", "Templar", "Hexblade"},
         healerClasses = {"Confessor", "Cleric", "Hierophant", "Templar", "Soothsayer", "Edgewalker"},
     },
+    -- AFK guess: the game exposes no AFK flag, so you count as AFK when your world position stays put.
+    -- Every intervalMs your position is compared with the previous one; staying within `tolerance` on
+    -- x, y and z adds a point, any bigger move resets the points. The AFK limit is the chosen number of
+    -- minutes (setting AfkMinutes, one of minuteOptions) converted to points.
+    afk = {intervalMs = 5000, tolerance = 1, minuteOptions = {2, 5, 10}},
     -- Raid sort window on the right side of the raid window
     sortPanel = {width = 300, height = 252, headerHeight = 36, gap = 4},
     -- Invite list window on the left side of the raid window: a header, then a scrolling stack of invite cards.

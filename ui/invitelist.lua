@@ -2,6 +2,7 @@ local constants = require("AAC-TnT-RaidTools/core/constants")
 local settings = require("AAC-TnT-RaidTools/core/settings")
 local Widgets = require("AAC-TnT-RaidTools/ui/widgets")
 local trace = require("AAC-TnT-RaidTools/core/trace")
+local AfkWatch = require("AAC-TnT-RaidTools/features/afkwatch")
 
 -- The invite list: a window on the left of the raid window holding any number of invites as cards.
 -- A "+" button in the top left corner of the raid panel adds one. Each card has a header (an icon
@@ -39,9 +40,24 @@ function InviteList.Create(root)
         emptyLines[i] = Widgets.Make("label", "invites_empty" .. i, window, 10, viewTop + 10 + (i - 1) * 20, dims.width - 20, 20, text)
     end
 
-    -- shown over the whole window while the global "Invites enabled" switch is off
-    local overlay = Widgets.Overlay("invites_off", window, dims.width, dims.height, 2)
-    overlay.SetLines({"INVITES DISABLED", "while Global enable is toggled off"})
+    -- shown over the whole window while the global "Invites enabled" switch is off and/or you are AFK
+    -- (with "Disable if afk" ticked); both can show at once
+    local overlay = Widgets.Overlay("invites_off", window, dims.width, dims.height, 4)
+    local overlayShown = false
+    local function refreshNotice()
+        local lines = {}
+        if not settings.Get("InvitesEnabled") then
+            lines[#lines + 1] = "INVITES DISABLED"
+            lines[#lines + 1] = "while Global enable is toggled off"
+        end
+        if AfkWatch.Blocks() then
+            lines[#lines + 1] = "INVITES PAUSED"
+            lines[#lines + 1] = "you are AFK"
+        end
+        overlayShown = #lines > 0
+        overlay.SetLines(lines)
+        overlay.Show(overlayShown)
+    end
 
     local self = {}
     local first = 1 -- index of the invite shown at the top
@@ -231,7 +247,7 @@ function InviteList.Create(root)
         end
         for k = used + 1, #pool do pool[k].widget:Show(false) end
         updateBar(used)
-        if not settings.Get("InvitesEnabled") then overlay.Raise() end -- cards made later must not end up above it
+        if overlayShown then overlay.Raise() end -- cards made later must not end up above it
     end
 
     local function scrollBy(step)
@@ -259,10 +275,11 @@ function InviteList.Create(root)
 
     -- Called when the global switch changes (and once at the start).
     function self.SetGlobalEnabled(enabled)
-        overlay.Show(not enabled)
+        refreshNotice()
         trace.Add("[invites] global switch " .. (enabled and "on" or "off") .. ": + button " .. (enabled and "shown" or "hidden"))
         addButton.Show(enabled) -- no adding invites while they are globally disabled
     end
+    self.RefreshNotice = refreshNotice -- called when the AFK state or its setting changes
     self.window = window
 
     -- saves from before active-first ordering: sort once

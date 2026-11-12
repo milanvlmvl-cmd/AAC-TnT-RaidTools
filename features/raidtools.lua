@@ -4,6 +4,7 @@ local constants = require("AAC-TnT-RaidTools/core/constants")
 local settings = require("AAC-TnT-RaidTools/core/settings")
 local trace = require("AAC-TnT-RaidTools/core/trace")
 local Authority = require("AAC-TnT-RaidTools/core/authority")
+local AfkWatch = require("AAC-TnT-RaidTools/features/afkwatch")
 
 local RaidTools = {}
 
@@ -41,6 +42,10 @@ local function handleInvites(channelId, speakerName, message)
     local debugging = settings.Get("DebugChat")
     if not settings.Get("InvitesEnabled") then
         if debugging then debug("invites skipped: global invites switch is off") end
+        return false
+    end
+    if AfkWatch.Blocks() then
+        if debugging then debug("invites skipped: you are AFK") end
         return false
     end
     for index, invite in ipairs(settings.Get("Invites")) do -- stored list, read only (normalised on load / by the editor)

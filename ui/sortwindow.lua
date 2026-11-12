@@ -3,6 +3,7 @@ local settings = require("AAC-TnT-RaidTools/core/settings")
 local Widgets = require("AAC-TnT-RaidTools/ui/widgets")
 local raidsort = require("AAC-TnT-RaidTools/features/raidsort")
 local Authority = require("AAC-TnT-RaidTools/core/authority")
+local AfkWatch = require("AAC-TnT-RaidTools/features/afkwatch")
 
 -- Raid sort window on the right side of the raid window. Like the invite windows it collapses to
 -- a header bar (title + Enabled checkbox) while the feature is off.
@@ -73,7 +74,7 @@ function SortWindow.Create(root)
     -- Messages over the expanded window: the global switch is off (the sort does not run then either),
     -- and/or you are not raid lead (the sort is paused). Both can show at once.
     -- covers the whole window, header included
-    local notice = Widgets.Overlay("sort_notice", window, dims.width, dims.height, 4)
+    local notice = Widgets.Overlay("sort_notice", window, dims.width, dims.height, 6)
     local sortEnabled = settings.Get("RaidSortEnabled")
     local function refreshNotice()
         local lines = {}
@@ -84,6 +85,10 @@ function SortWindow.Create(root)
         if Authority.IsPaused() then
             lines[#lines + 1] = "RAID SORT PAUSED"
             lines[#lines + 1] = "you are not raid lead"
+        end
+        if AfkWatch.Blocks() then
+            lines[#lines + 1] = "RAID SORT PAUSED"
+            lines[#lines + 1] = "you are AFK"
         end
         notice.SetLines(lines)
         notice.Show(sortEnabled and #lines > 0)
