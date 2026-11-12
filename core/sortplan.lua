@@ -19,6 +19,17 @@ local function byGearScore(a, b)
     return a.name < b.name
 end
 
+-- Splits members into tanks, healers and everyone else (each in the order given).
+local function partitionByRole(members)
+    local tanks, healers, others = {}, {}, {}
+    for _, m in ipairs(members) do
+        if m.role == "tank" then tanks[#tanks + 1] = m
+        elseif m.role == "healer" then healers[#healers + 1] = m
+        else others[#others + 1] = m end
+    end
+    return tanks, healers, others
+end
+
 -- Others: by skillset rank first (members without a rank go last), then gear score, then name.
 local function byRankThenGearScore(a, b)
     local ra, rb = a.rank or math.huge, b.rank or math.huge
@@ -60,12 +71,7 @@ end
 -- Tanks fill their groups, healers theirs, everyone else (plus any tank/healer overflow) the
 -- other groups; if those run out the remaining free slots are used, so nobody is left unplaced.
 function SortPlan.Build(members, cfg)
-    local tanks, healers, others = {}, {}, {}
-    for _, m in ipairs(members) do
-        if m.role == "tank" then tanks[#tanks + 1] = m
-        elseif m.role == "healer" then healers[#healers + 1] = m
-        else others[#others + 1] = m end
-    end
+    local tanks, healers, others = partitionByRole(members)
     table.sort(tanks, byGearScore)
     table.sort(healers, byGearScore)
 
@@ -103,12 +109,7 @@ end
 function SortPlan.BuildStyle2(members, cfg)
     local size = cfg.groupSize
     local groups = math.ceil(cfg.maxMembers / size)
-    local tanks, healers, others = {}, {}, {}
-    for _, m in ipairs(members) do
-        if m.role == "tank" then tanks[#tanks + 1] = m
-        elseif m.role == "healer" then healers[#healers + 1] = m
-        else others[#others + 1] = m end
-    end
+    local tanks, healers, others = partitionByRole(members)
     table.sort(tanks, byGearScore)
     table.sort(healers, byGearScore)
     local needed = math.min(groups, math.ceil(#members / size))
@@ -159,7 +160,7 @@ end
 --   * onto an occupied slot: the two members swap (also within a group);
 --   * within a group onto an EMPTY slot: nothing happens. To close a gap a member has to leave the
 --     group and come back (they then take the group's topmost free slot).
--- Used by the planner's tests; the planner only ever asks for moves where `to` is the topmost free
+-- Used by tests/run.lua to simulate a raid; the planner only ever asks for moves where `to` is the topmost free
 -- slot of a different group, or an occupied slot.
 function SortPlan.Apply(current, from, to, size)
     size = size or 5

@@ -14,13 +14,6 @@ local AfkWatch = require("AAC-TnT-RaidTools/features/afkwatch")
 -- arrows, the mouse wheel, and a bar on the right that shows where you are in the list.
 local InviteList = {}
 
-local function cycle(current, values)
-    for i, value in ipairs(values) do
-        if value == current then return values[i % #values + 1] end
-    end
-    return values[1]
-end
-
 function InviteList.Create(root)
     local dims = constants.invitePanel
     local x = 8
@@ -32,7 +25,7 @@ function InviteList.Create(root)
     local window = Widgets.Make("emptywidget", "invites", root, 0, 0, dims.width, dims.height)
     window:RemoveAllAnchors()
     window:AddAnchor("TOPRIGHT", root, "TOPLEFT", -dims.gap, 0)
-    Widgets.AddBackground(window, "invites_bg", constants.folderPath .. "images/background.png", dims.width, dims.height)
+    Widgets.AddBackground(window, "invites_bg", dims.width, dims.height)
     Widgets.Make("label", "invites_title", window, 10, 8, 200, 22, "INVITES")
     -- one label per line: the label widget does not wrap text by itself
     local emptyLines = {}
@@ -48,7 +41,7 @@ function InviteList.Create(root)
         local lines = {}
         if not settings.Get("InvitesEnabled") then
             lines[#lines + 1] = "INVITES DISABLED"
-            lines[#lines + 1] = "while Global enable is toggled off"
+            lines[#lines + 1] = "while INVITES Enabled is off"
         end
         if AfkWatch.Blocks() then
             lines[#lines + 1] = "INVITES PAUSED"
@@ -159,15 +152,11 @@ function InviteList.Create(root)
         end
         for _, event in ipairs(Widgets.textEvents) do card.phrase:SetHandler(event, savePhrase) end
 
+        -- cycles invite field `field` of whichever invite the card shows (text is filled in by bind)
         local function cycleButton(suffix, bx, by, bw, field, values)
-            local button = Widgets.Make("button", id .. suffix, body, bx, by, bw, 22, "")
-            button:SetHandler("OnClick", function()
-                local current = (invites()[card.index] or {})[field]
-                local nextValue = cycle(current, values)
-                setField(card.index, field, nextValue)
-                button:SetText(string.upper(nextValue))
-            end)
-            return button
+            return Widgets.CycleButton(body, id .. suffix, bx, by, bw, values,
+                function() return (invites()[card.index] or {})[field] end,
+                function(value) setField(card.index, field, value) end)
         end
         card.channel = cycleButton("_channel", x + 88, 24, 84, "Channel", constants.channelOrder)
         card.match = cycleButton("_match", x + 176, 24, 84, "Match", constants.matches)
@@ -265,10 +254,9 @@ function InviteList.Create(root)
         local list = settings.GetInvites()
         for _, other in ipairs(list) do other.Collapsed = true end -- the new invite is the one open card
         list[#list + 1] = settings.NewInvite()
-        settings.SetInvites(list) -- the new (active) invite lands after the last active one
+        local activeCount = settings.SetInvites(list) -- the new (active) invite lands after the last active one
         trace.Add("[invites] + pressed, now " .. #list .. " invites")
         Widgets.PlayStacked(constants.actionSounds.addInvite)
-        local activeCount = settings.SortInvites(list)
         first = activeCount -- clamped to the furthest scroll, so the new invite is in view
         layout()
     end, true) -- quiet: the stacked sound replaces the button's click sound
@@ -280,20 +268,6 @@ function InviteList.Create(root)
         addButton.Show(enabled) -- no adding invites while they are globally disabled
     end
     self.RefreshNotice = refreshNotice -- called when the AFK state or its setting changes
-    self.window = window
-
-    -- saves from before active-first ordering: sort once
-    local saved = settings.GetInvites()
-    local _, moved = settings.SortInvites(saved)
-    -- saves from before one-open-at-a-time: keep only the first open card open
-    local seenOpen = false
-    for _, invite in ipairs(saved) do
-        if not invite.Collapsed then
-            if seenOpen then invite.Collapsed = true; moved = true end
-            seenOpen = true
-        end
-    end
-    if moved then settings.SetInvites(saved) end
 
     layout()
     self.SetGlobalEnabled(settings.Get("InvitesEnabled"))

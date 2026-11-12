@@ -15,6 +15,23 @@ local function useButtonSound(button)
     if button.SetSounds then button:SetSounds(constants.buttonSound) end
 end
 
+-- Transparent-or-skinned child button at (x, y) of `anchorTo` inside `parent`, with the click sound
+-- (quiet = true: none, the caller plays its own). Freed by FreeAll.
+local function makeButton(parent, fullId, anchorTo, x, y, width, height, quiet)
+    local button = parent:CreateChildWidget("button", fullId, 0, true)
+    button:AddAnchor("TOPLEFT", anchorTo, x, y)
+    button:SetExtent(width, height)
+    if quiet then
+        pcall(function() button:SetSounds("") end)
+    else
+        useButtonSound(button)
+    end
+    button:Show(true)
+    button:Enable(true)
+    created[#created + 1] = button
+    return button
+end
+
 -- A sound player, done the way WorldSatNav plays its stacked alert sound (helpers/sound.lua): addons
 -- get no "play this sound" call, only SetSounds themes, and a window plays its theme when the engine
 -- opens it. So a player is a hidden 1x1 window carrying the key. Play silences it while it is hidden
@@ -79,9 +96,9 @@ function Widgets.Make(kind, id, parent, x, y, width, height, text)
 end
 
 -- Parchment background drawable filling a widget.
-function Widgets.AddBackground(widget, id, texture, width, height)
+function Widgets.AddBackground(widget, id, width, height)
     local bg = widget:CreateImageDrawable(idPrefix .. "_" .. id, "background")
-    bg:SetTexture(texture)
+    bg:SetTexture(constants.folderPath .. "images/background.png")
     bg:SetExtent(width, height)
     bg:AddAnchor("TOPLEFT", widget, 0, 0)
     bg:Show(true)
@@ -119,13 +136,7 @@ function Widgets.Checkbox(id, parent, text, x, y, checked, onChange)
     overlay:SetExtent(size, size)
     overlay:Show(true)
 
-    local button = parent:CreateChildWidget("button", fullId .. "_btn", 0, true)
-    button:AddAnchor("TOPLEFT", parent, x, y)
-    button:SetExtent(size, size)
-    useButtonSound(button)
-    button:Show(true)
-    button:Enable(true)
-    created[#created + 1] = button
+    local button = makeButton(parent, fullId .. "_btn", parent, x, y, size, size)
 
     -- text is optional: with none, only the box is drawn and clicked
     local labelButton
@@ -145,13 +156,7 @@ function Widgets.Checkbox(id, parent, text, x, y, checked, onChange)
         created[#created + 1] = label
 
         -- transparent proxy over the text so clicking it also toggles (and plays the click sound)
-        labelButton = parent:CreateChildWidget("button", fullId .. "_textbtn", 0, true)
-        labelButton:AddAnchor("TOPLEFT", button, size + textGap, 0)
-        labelButton:SetExtent(textWidth, textHeight)
-        useButtonSound(labelButton)
-        labelButton:Show(true)
-        labelButton:Enable(true)
-        created[#created + 1] = labelButton
+        labelButton = makeButton(parent, fullId .. "_textbtn", button, size + textGap, 0, textWidth, textHeight)
     end
 
     local function render()
@@ -218,13 +223,7 @@ end
 
 -- Invisible button over an area (a label that should react to clicks). Returns the button.
 function Widgets.ClickArea(id, parent, x, y, width, height, onClick)
-    local button = parent:CreateChildWidget("button", idPrefix .. "_" .. id, 0, true)
-    button:AddAnchor("TOPLEFT", parent, x, y)
-    button:SetExtent(width, height)
-    useButtonSound(button)
-    button:Show(true)
-    button:Enable(true)
-    created[#created + 1] = button
+    local button = makeButton(parent, idPrefix .. "_" .. id, parent, x, y, width, height)
     button:SetHandler("OnClick", onClick)
     button:Raise()
     return button
@@ -250,17 +249,7 @@ function Widgets.IconButton(id, parent, texture, x, y, size, onClick, quiet)
     picture:SetTexture(constants.folderPath .. "images/" .. texture)
     picture:Show(true)
 
-    local button = holder:CreateChildWidget("button", fullId .. "_btn", 0, true)
-    button:AddAnchor("TOPLEFT", holder, 0, 0)
-    button:SetExtent(size, size)
-    if quiet then
-        pcall(function() button:SetSounds("") end)
-    else
-        useButtonSound(button)
-    end
-    button:Show(true)
-    button:Enable(true)
-    created[#created + 1] = button
+    local button = makeButton(holder, fullId .. "_btn", holder, 0, 0, size, size, quiet)
     button:SetHandler("OnClick", onClick)
     button:Raise()
     holder:Raise() -- above whatever else the parent already holds
@@ -272,6 +261,34 @@ function Widgets.IconButton(id, parent, texture, x, y, size, onClick, quiet)
         holder:Show(visible)
     end
     return icon
+end
+
+-- The value after `current` in `values` (wrapping around); the first one when current is not listed.
+function Widgets.Cycle(current, values)
+    for i, value in ipairs(values) do
+        if value == current then return values[i % #values + 1] end
+    end
+    return values[1]
+end
+
+-- Button that cycles through `values` on every click, showing the current one in capitals.
+-- get() returns the current value (nil shows no text), set(value) stores the new one.
+function Widgets.CycleButton(parent, id, x, y, width, values, get, set)
+    local current = get()
+    local button = Widgets.Make("button", id, parent, x, y, width, 22, current and string.upper(current) or "")
+    button:SetHandler("OnClick", function()
+        local nextValue = Widgets.Cycle(get(), values)
+        set(nextValue)
+        button:SetText(string.upper(nextValue))
+    end)
+    return button
+end
+
+-- Cycle button bound to a setting.
+function Widgets.SettingCycleButton(parent, id, x, y, width, key, values)
+    return Widgets.CycleButton(parent, id, x, y, width, values,
+        function() return settings.Get(key) end,
+        function(value) settings.Update(key, value) end)
 end
 
 -- Checkbox bound to a boolean setting.

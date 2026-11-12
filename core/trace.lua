@@ -1,4 +1,5 @@
 local api = require("api")
+local constants = require("AAC-TnT-RaidTools/core/constants")
 local settings = require("AAC-TnT-RaidTools/core/settings")
 
 -- Rolling debug trace written to AAC-TnT-RaidTools/debug.lua (path is relative to the addons
@@ -22,6 +23,18 @@ function Trace.Add(text)
     lines[#lines + 1] = counter .. " " .. tostring(text)
     if #lines > MAX_LINES then table.remove(lines, 1) end
     pcall(function() api.File:Write(PATH, {lines = lines}) end)
+end
+
+-- A log function that prefixes every line with "[tag] ".
+function Trace.Logger(tag)
+    local prefix = "[" .. tag .. "] "
+    return function(text) Trace.Add(prefix .. text) end
+end
+
+-- Trace line plus a chat line, for state changes the player should see (not only while debugging).
+function Trace.Announce(tag, text)
+    Trace.Add("[" .. tag .. "] " .. text)
+    pcall(function() api.Log:Info("[" .. constants.displayName .. "] " .. text) end)
 end
 
 return Trace

@@ -1,11 +1,12 @@
 local api = require("api")
-local Logic = require("AAC-TnT-RaidTools/logic")
+local Matching = require("AAC-TnT-RaidTools/core/matching")
 local constants = require("AAC-TnT-RaidTools/core/constants")
 local settings = require("AAC-TnT-RaidTools/core/settings")
 local trace = require("AAC-TnT-RaidTools/core/trace")
 local Authority = require("AAC-TnT-RaidTools/core/authority")
 local AfkWatch = require("AAC-TnT-RaidTools/features/afkwatch")
 
+-- Chat-driven tools: auto invites, lead pass and the "/debug" whisper command.
 local RaidTools = {}
 
 local live = false
@@ -14,18 +15,22 @@ function RaidTools.Log(text)
     trace.Add(text)
 end
 
--- Build the config table Logic.eligible expects from the flat settings keys.
+-- Extra trace lines, only while debug logging is on.
+local function debug(text)
+    if settings.Get("DebugChat") then RaidTools.Log("[debug] " .. text) end
+end
+
+-- Build the config table Matching.check expects from an invite.
 local function inviteConfig(invite)
     return {
-        enabled = true, -- an invite is active for as long as it exists
         channel = invite.Channel,
         match = invite.Match,
         phrase = invite.Phrase,
         -- the name lists are shared; each invite picks public, private or disabled for each
         whitelistEnabled = invite.WhitelistMode ~= "disabled",
         blacklistEnabled = invite.BlacklistMode ~= "disabled",
-        whitelist = Logic.lookup(settings.Get(settings.ActiveListKey("Whitelist", invite.WhitelistMode))),
-        blacklist = Logic.lookup(settings.Get(settings.ActiveListKey("Blacklist", invite.BlacklistMode))),
+        whitelist = Matching.lookup(settings.Get(settings.ActiveListKey("Whitelist", invite.WhitelistMode))),
+        blacklist = Matching.lookup(settings.Get(settings.ActiveListKey("Blacklist", invite.BlacklistMode))),
     }
 end
 
@@ -34,43 +39,40 @@ local function isInTeam(name)
     return index ~= nil and index ~= 0
 end
 
-local function debug(text)
-    if settings.Get("DebugChat") then RaidTools.Log("[debug] " .. text) end
-end
-
+-- Returns true when the message was taken by an invite (so the lead pass must not also see it).
 local function handleInvites(channelId, speakerName, message)
-    local debugging = settings.Get("DebugChat")
     if not settings.Get("InvitesEnabled") then
-        if debugging then debug("invites skipped: global invites switch is off") end
+        debug("invites skipped: global invites switch is off")
         return false
     end
     if AfkWatch.Blocks() then
-        if debugging then debug("invites skipped: you are AFK") end
+        debug("invites skipped: you are AFK")
         return false
     end
+    local debugging = settings.Get("DebugChat")
     for index, invite in ipairs(settings.Get("Invites")) do -- stored list, read only (normalised on load / by the editor)
         -- cheap check first: every chat line in every channel passes through here, so unless debugging
         -- only invites whose phrase matches get the full check (which writes a trace line)
         if invite.Active == false then
-            if debugging then debug("invite " .. index .. " skipped: switched off (Zzz)") end
-        elseif debugging or Logic.matchesPhrase(message, invite.Phrase, invite.Match) then
+            debug("invite " .. index .. " skipped: switched off (Zzz)")
+        elseif debugging or Matching.matchesPhrase(message, invite.Phrase, invite.Match) then
             local config = inviteConfig(invite)
-            local ok, reason = Logic.check({name = speakerName, text = message}, channelId, config, config.blacklist, config.whitelist)
+            local ok, reason = Matching.check({name = speakerName, text = message}, channelId, config, config.blacklist, config.whitelist)
             if ok then
                 if not Authority.CanManage() then
                     debug("invite " .. index .. ": matched, but you are not raid lead")
                     return true
                 end
                 if isInTeam(speakerName) then
+                    -- not taken: the same words may still be the lead pass keyword
                     debug("invite " .. index .. ": matched, but " .. speakerName .. " is already in the raid")
-                    return
+                    return false
                 end
                 RaidTools.Log("Inviting " .. speakerName)
                 api.Team:InviteToTeam(speakerName, false)
-                return true -- one invite per message even if both phrases match
-            elseif debugging then
-                debug("invite " .. index .. " skipped: " .. reason)
+                return true -- one invite per message even if several invites match
             end
+            debug("invite " .. index .. " skipped: " .. reason)
         end
     end
     return false
@@ -86,16 +88,14 @@ local function passLead(name)
 end
 
 local function handleLeadPass(channelId, speakerName, message)
-    if not settings.Get("LeadEnabled") or not Logic.channelAllowed(channelId, settings.Get("LeadChannel")) then return end
-    if not Logic.matchesPhrase(message, settings.Get("LeadPhrase"), "equals") then return end
+    if not settings.Get("LeadEnabled") or not Matching.channelAllowed(channelId, settings.Get("LeadChannel")) then return end
+    if not Matching.matchesPhrase(message, settings.Get("LeadPhrase"), "equals") then return end
     if settings.Get("LeadWhitelistEnabled") then
-        local allowed = Logic.lookup(settings.Get("LeadWhitelist"))
-        if not allowed[Logic.normalizeName(speakerName)] then return end
+        local allowed = Matching.lookup(settings.Get("LeadWhitelist"))
+        if not allowed[Matching.normalizeName(speakerName)] then return end
     end
     passLead(speakerName)
 end
-
-local firstEventLogged = false
 
 -- Your own character name, for the whisper-to-self debug command.
 local function ownName()
@@ -110,18 +110,17 @@ end
 -- "/debug" whispered by yourself toggles the extra debug trace. Returns true when handled.
 local function handleDebugCommand(channelId, speakerName, message)
     if channelId ~= constants.channels.whisper then return false end
-    if Logic.normalizeName(message) ~= "/debug" then return false end
+    if Matching.normalizeName(message) ~= "/debug" then return false end
     local me = ownName()
-    if me == nil or Logic.normalizeName(speakerName) ~= Logic.normalizeName(me) then return false end
+    if me == nil or Matching.normalizeName(speakerName) ~= Matching.normalizeName(me) then return false end
     local on = not settings.Get("DebugChat")
     settings.Update("DebugChat", on)
-    RaidTools.Log("debug log " .. (on and "ON" or "OFF"))
-    api.Log:Info("[" .. constants.displayName .. "] debug log " .. (on and "ON" or "OFF"))
+    trace.Announce("debug", "debug log " .. (on and "ON" or "OFF"))
     return true
 end
 
 local function onChat(...)
-    local channelId, speakerId, extra, speakerName, message = ...
+    local channelId, _, _, speakerName, message = ...
     if settings.Get("DebugChat") then
         -- the game's Lua has no global `select`, so read the arguments through a table
         local args = {...}
@@ -129,9 +128,9 @@ local function onChat(...)
         for i = 1, 8 do parts[i] = i .. "=" .. tostring(args[i]) end
         RaidTools.Log("[debug] CHAT_MESSAGE live=" .. tostring(live) .. " " .. table.concat(parts, " | "))
     end
-    if not live then 
+    if not live then
         debug("ignored: not live")
-        return 
+        return
     end
     if not speakerName or type(message) ~= "string" then
         debug("ignored: speaker name or message text is missing (arg order may differ)")
@@ -142,25 +141,16 @@ local function onChat(...)
     handleLeadPass(channelId, speakerName, message)
 end
 
--- Two delivery paths are wired up: api.On (what Actually_Useable_X_Up uses, confirmed to
--- deliver in this game build) and a hidden window's OnEvent (WorldSatNav/PlayerDB pattern).
--- Whichever delivers first becomes the only source we act on, so nothing is handled twice.
 -- api.On keeps one callback per event, so another addon using CHAT_MESSAGE can replace ours.
-local eventWindow
-local activeSource
-
 function RaidTools.OnLoad()
-    firstEventLogged = false
-    activeSource = nil
-    rawLogged = 0
     api.On("CHAT_MESSAGE", onChat)
-    RaidTools.Log("chat listeners registered: api.On + window (debug log " .. (settings.Get("DebugChat") and "ON" or "OFF") .. ")")
+    RaidTools.Log("chat listener registered (debug log " .. (settings.Get("DebugChat") and "ON" or "OFF") .. ")")
     live = true
 end
 
 function RaidTools.OnUnload()
     live = false
-    api.On("CHAT_MESSAGE", nil)
+    api.On("CHAT_MESSAGE", function() return end)
 end
 
 return RaidTools

@@ -1,4 +1,4 @@
-local Logic = require("AAC-TnT-RaidTools/logic")
+local Matching = require("AAC-TnT-RaidTools/core/matching")
 local constants = require("AAC-TnT-RaidTools/core/constants")
 local settings = require("AAC-TnT-RaidTools/core/settings")
 local Widgets = require("AAC-TnT-RaidTools/ui/widgets")
@@ -26,7 +26,7 @@ function ListPanel.Create(parent, opts)
 
     local window = Widgets.Make("emptywidget", id, parent, 0, 0, dims.width, dims.editorHeight)
     Widgets.AnchorBelow(window, parent, dims.gap)
-    Widgets.AddBackground(window, id .. "_bg", constants.folderPath .. "images/background.png", dims.width, dims.editorHeight)
+    Widgets.AddBackground(window, id .. "_bg", dims.width, dims.editorHeight)
     window:Show(false)
 
     local function currentKey()
@@ -71,10 +71,10 @@ function ListPanel.Create(parent, opts)
 
     local function addNames()
         local list = entries()
-        local seen = Logic.lookup(list)
+        local seen = Matching.lookup(list)
         local changed = false
-        for _, name in ipairs(Logic.splitNames(input:GetText())) do
-            local nameKey = Logic.normalizeName(name)
+        for _, name in ipairs(Matching.splitNames(input:GetText())) do
+            local nameKey = Matching.normalizeName(name)
             if not seen[nameKey] then
                 list[#list + 1] = name
                 seen[nameKey] = true

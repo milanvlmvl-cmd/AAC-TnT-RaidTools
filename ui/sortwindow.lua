@@ -23,7 +23,7 @@ function SortWindow.Create(root)
     local window = Widgets.Make("emptywidget", "sort", root, 0, 0, dims.width, dims.height)
     window:RemoveAllAnchors()
     window:AddAnchor("TOPLEFT", root, "TOPRIGHT", dims.gap, 0)
-    local background = Widgets.AddBackground(window, "sort_bg", constants.folderPath .. "images/background.png", dims.width, dims.height)
+    local background = Widgets.AddBackground(window, "sort_bg", dims.width, dims.height)
 
     local body = Widgets.Make("emptywidget", "sort_body", window, 0, dims.headerHeight, dims.width, dims.height - dims.headerHeight)
     local recheck = "Re-checked every " .. math.floor(sort.recheckMs / 1000) .. "s and on join/leave"
@@ -80,7 +80,7 @@ function SortWindow.Create(root)
         local lines = {}
         if not settings.Get("InvitesEnabled") then
             lines[#lines + 1] = "RAID SORT DISABLED"
-            lines[#lines + 1] = "while Global enabled is toggled off"
+            lines[#lines + 1] = "while INVITES Enabled is off"
         end
         if Authority.IsPaused() then
             lines[#lines + 1] = "RAID SORT PAUSED"
@@ -113,7 +113,7 @@ function SortWindow.Create(root)
     end)
     applyEnabled(settings.Get("RaidSortEnabled"))
     pcall(Authority.CanManage) -- first look at the lead state so the notice is right from the start
-    return {window = window, RefreshNotice = refreshNotice}
+    return {RefreshNotice = refreshNotice}
 end
 
 return SortWindow
