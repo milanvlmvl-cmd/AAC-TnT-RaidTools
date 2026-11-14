@@ -32,7 +32,7 @@ function SortWindow.Create(root)
             "Tanks:  groups " .. groupList(sort.tankGroups),
             "Healers:  groups " .. groupList(sort.healerGroups),
             "Others:  groups " .. groupList(sort.otherGroups),
-            "Others: " .. table.concat(sort.otherSkillsetOrder, ", "),
+            "Short tank groups filled with others",
             "Each sorted by gear score, highest first",
             recheck,
         },

@@ -30,70 +30,67 @@ local function partitionByRole(members)
     return tanks, healers, others
 end
 
--- Others: by skillset rank first (members without a rank go last), then gear score, then name.
-local function byRankThenGearScore(a, b)
-    local ra, rb = a.rank or math.huge, b.rank or math.huge
-    if ra ~= rb then return ra < rb end
-    return byGearScore(a, b)
-end
-
--- Lays the (already sorted) others out one skillset bucket per run of groups, leaving one empty
--- group between buckets. Only done when every bucket fits that way inside the other groups;
--- returns true when it placed everyone, false (placing nothing) when there is not enough room.
-local function spaceOut(others, slots, cfg, desired)
-    local size = cfg.groupSize
-    local buckets, last = {}, nil
-    for _, m in ipairs(others) do
-        local key = m.rank or math.huge
-        if key ~= last then buckets[#buckets + 1] = {}; last = key end
-        local bucket = buckets[#buckets]
-        bucket[#bucket + 1] = m
-    end
-    local groupsNeeded = math.max(#buckets - 1, 0)
-    for _, bucket in ipairs(buckets) do groupsNeeded = groupsNeeded + math.ceil(#bucket / size) end
-    if groupsNeeded > #cfg.otherGroups then return false end
-    local group = 0 -- groups used so far, counting gaps
-    for _, bucket in ipairs(buckets) do
-        for i, m in ipairs(bucket) do
-            local index = (group + math.floor((i - 1) / size)) * size + (i - 1) % size + 1
-            desired[slots[index]] = m.name
-        end
-        group = group + math.ceil(#bucket / size) + 1
-    end
-    return true
-end
-
--- members: list of {name, role = "tank" | "healer" | "other", gs = number or nil, rank = number or nil}
--- rank (lower = earlier) sub-sorts the others before gear score; tanks and healers ignore it.
--- cfg: tankGroups, healerGroups, otherGroups, groupSize, maxMembers,
--- gapBetweenRoles (leave an empty group between skillset buckets of the others when there is room)
--- Returns desired: slot -> member name.
--- Tanks fill their groups, healers theirs, everyone else (plus any tank/healer overflow) the
--- other groups; if those run out the remaining free slots are used, so nobody is left unplaced.
+-- Class style. members: list of {name, role = "tank" | "healer" | "other", gs = number or nil}
+-- cfg: tankGroups, healerGroups, otherGroups, overflowGroups, backfillNeedsTank, groupSize, maxMembers
+-- Returns desired: slot -> member name. In order:
+--   1-3. others, tanks and healers are each sorted by gear score, highest first;
+--   4.   healers fill the healer groups; overflow goes to the bottom of the tank list;
+--   5.   tanks fill the tank groups; overflow goes to the top of the others;
+--   6-7. a tank group with free slots is filled up with the next others, in tankGroups order. A group
+--        listed in backfillNeedsTank (party 6) only counts when at least one tank was placed in it;
+--   8.   the remaining others fill the other groups. A backfillNeedsTank group without a tank joins
+--        them in group-number order (party 6 after parties 2, 3, 4, before 7, 8, 9);
+--   9-10. still more: the overflow groups in order (party 6, then party 10);
+--   last: any free slot, so nobody is left unplaced.
+-- Every group is filled from its top slot, so no group has a gap above a member.
 function SortPlan.Build(members, cfg)
+    local size = cfg.groupSize
     local tanks, healers, others = partitionByRole(members)
+    table.sort(others, byGearScore)
     table.sort(tanks, byGearScore)
     table.sort(healers, byGearScore)
 
     local desired = {}
-    local function fill(list, slots)
-        local rest = {}
-        for i, m in ipairs(list) do
-            if slots[i] then desired[slots[i]] = m.name else rest[#rest + 1] = m end
+    -- Places `list` in order into the free slots of `groups`; returns whoever did not fit.
+    local function place(list, groups)
+        local i = 1
+        for _, slot in ipairs(slotsOf(groups, size)) do
+            if list[i] == nil then break end
+            if desired[slot] == nil then
+                desired[slot] = list[i].name
+                i = i + 1
+            end
         end
+        local rest = {}
+        for j = i, #list do rest[#rest + 1] = list[j] end
         return rest
     end
-    local tankOverflow = fill(tanks, slotsOf(cfg.tankGroups, cfg.groupSize))
-    local healerOverflow = fill(healers, slotsOf(cfg.healerGroups, cfg.groupSize))
-    for _, m in ipairs(tankOverflow) do others[#others + 1] = m end
-    for _, m in ipairs(healerOverflow) do others[#others + 1] = m end
-    table.sort(others, byRankThenGearScore)
 
-    local slots = slotsOf(cfg.otherGroups, cfg.groupSize)
-    local spaced = cfg.gapBetweenRoles and spaceOut(others, slots, cfg, desired)
-    local rest = spaced and {} or fill(others, slots)
+    for _, m in ipairs(place(healers, cfg.healerGroups)) do tanks[#tanks + 1] = m end
+    local queue = place(tanks, cfg.tankGroups)
+    for _, m in ipairs(others) do queue[#queue + 1] = m end
+
+    local needsTank = cfg.backfillNeedsTank or {}
+    local otherGroups = {}
+    for _, group in ipairs(cfg.otherGroups) do otherGroups[#otherGroups + 1] = group end
+    for _, group in ipairs(cfg.tankGroups) do
+        local hasTank = desired[(group - 1) * size + 1] ~= nil
+        if hasTank or not needsTank[group] then
+            queue = place(queue, {group})
+        else
+            -- no tank: filled like an other group, in group-number order (party 6 after 2, 3, 4)
+            local at = #otherGroups + 1
+            for i, g in ipairs(otherGroups) do
+                if g > group then at = i; break end
+            end
+            table.insert(otherGroups, at, group)
+        end
+    end
+    queue = place(queue, otherGroups)
+    queue = place(queue, cfg.overflowGroups or {})
+
     local slot = 1
-    for _, m in ipairs(rest) do
+    for _, m in ipairs(queue) do
         while desired[slot] ~= nil do slot = slot + 1 end
         desired[slot] = m.name
     end

@@ -42,7 +42,7 @@ local function resetRun()
     halted, movesThisRun, pending, failedMoves, queued = false, 0, nil, 0, nil
 end
 
--- Everyone in the raid as {name, slot, unit, class, role, roleSource, color, rank, gs}. A class or gear
+-- Everyone in the raid as {name, slot, unit, class, role, roleSource, color, gs}. A class or gear
 -- score that cannot be read (out of range, API failure) falls back to the last readable value for that
 -- player (or, with "Save GS+Class", the one saved on disk), and then to class "unknown" (role
 -- "other") and a fake gear score equal to the name length (far below any real score, so unknowns sort
@@ -79,7 +79,6 @@ local function readRoster()
             name = name, slot = slot, unit = unit,
             class = knownClass or "unknown",
             role = role, roleSource = source, color = colorId,
-            rank = Roles.OtherRank(skillCache[name]),
             gs = gearCache[name] or #name, -- unknown: fake a tiny score from the name length, stable across joins/leaves
         }
     end, safe)

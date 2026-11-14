@@ -53,7 +53,7 @@ A player's role is decided in this order:
 The **Sort style** button switches between two layouts:
 
 - **Party** (default): every group is 1 tank, 3 others and 1 healer, top to bottom. Group 1 gets the highest gear score of each role. A group with no tank gets an extra other instead. A short group keeps its healer in the bottom slot.
-- **Class**: tanks go in groups 1 and 6, healers in groups 5 and 10, and everyone else in groups 2, 3, 4, 7, 8 and 9. Others are further grouped by skillset (Sorcery, then Archery, then Battlerage, then everything else), with an empty group between each when there is room.
+- **Class**: each role is sorted by gear score. Healers go in groups 5 and 10 (extra healers join the bottom of the tank list), tanks in groups 1 and 6 (extra tanks go first among the others). A tank group with free slots is filled with the best others: group 1 always, group 6 only when it has at least one tank. The remaining others go in groups 2, 3, 4, then group 6 if it has no tank, then 7, 8 and 9, then group 10.
 
 Slot layout and timings (settle time, retries, move limits) are all in `core/constants.lua` under `raidSort`.
 

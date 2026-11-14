@@ -5,7 +5,7 @@ local Constants = {
     addonName = "AAC-TnT-RaidTools", -- addon folder name, also the GetSettings id
     folderPath = api.baseDir .. "/AAC-TnT-RaidTools/",
     displayName = "TnT Raid Tools",
-    version = "0.2.1",
+    version = "0.2.2",
 
     -- ---- invites / lead pass -------------------------------------------------------------------
     -- Chat channel id each selection matches; "*" matches any channel id.
@@ -31,17 +31,24 @@ local Constants = {
     raidSort = {
         -- Class style: tanks / healers / everyone else are placed in these raid groups (5 slots each).
         -- A class in both class lists counts as a tank (tank list is checked first).
+        -- Healer overflow joins the bottom of the tanks, tank overflow the top of the others.
         tankGroups = {1, 6},
         healerGroups = {5, 10},
         otherGroups = {2, 3, 4, 7, 8, 9},
+        -- A tank group with free slots is filled up with the best others before the other groups are;
+        -- a group listed here only when at least one tank was placed in it. Without a tank it is filled
+        -- like an other group, in group-number order (party 6 after parties 2, 3, 4, before 7, 8, 9).
+        backfillNeedsTank = {[6] = true},
+        -- Others left over once the other groups are full go here, in this order.
+        overflowGroups = {6, 10},
         groupSize = 5,
         maxMembers = 50,
 
         -- timings
         recheckMs = 10000, -- re-read the raid this often (picks up gear scores of people now in range)
         settleMs = 3000, -- wait this long after someone joins/leaves before sorting; every further join/leave restarts the wait
-        sendDelayMs = 40, -- wait this long between planning a move and sending it
-        moveDelayMs = 250, -- wait after sending a move before checking that it took effect
+        sendDelayMs = 20, -- wait this long between planning a move and sending it
+        moveDelayMs = 150, -- wait after sending a move before checking that it took effect
         pollMs = 125, -- how often to check while waiting for a move to show up in the roster
         moveTimeoutMs = 4000, -- a move that has not shown up after this long counts as failed
         maxRetries = 3, -- failed moves in a row (while you are lead) re-planned before giving up and stopping
@@ -68,11 +75,6 @@ local Constants = {
         -- the raid window. Maps the id Team:GetRole returns to "tank" / "healer" / "other". An id
         -- not listed here is ignored.
         roleColors = {[0] = "other", [1] = "tank", [2] = "healer", [3] = "other"}, -- 0 blue, 1 green, 2 pink, 3 red
-
-        -- Class style: "others" are sub-sorted by the first skillset in this list that they have (earlier =
-        -- higher up, filling from the first other group), then by gear score. Others with none of them come last.
-        otherSkillsetOrder = {"Sorcery", "Archery", "Battlerage"},
-        gapBetweenRoles = true, -- leave one empty group between those skillset buckets when the raid has room
 
         -- "Save GS+Class" writes one small file per player (name, className, gearScore) to this folder
         -- (relative to the addons folder) and reads it back for a player whose class or gear score

@@ -66,21 +66,6 @@ local function roleFromSkillsets(ids)
     return nil
 end
 
--- Sub-sort rank for the "others": position (1 = first) of the first skillset in
--- cfg.otherSkillsetOrder that the player has; nil when they have none of them (or are unreadable).
-function Roles.OtherRank(ids)
-    if ids == nil then return nil end
-    local names = {}
-    for _, id in ipairs(ids) do
-        local name = Roles.SkillsetName(id)
-        if name ~= nil then names[name:lower()] = true end
-    end
-    for rank, wanted in ipairs(cfg.otherSkillsetOrder) do
-        if names[wanted:lower()] then return rank end
-    end
-    return nil
-end
-
 -- Role and how it was decided: the explicit class lists first, then the player's skillsets.
 function Roles.Decide(className, skillIds)
     local fromClass = roleByClass[(className or ""):lower()]

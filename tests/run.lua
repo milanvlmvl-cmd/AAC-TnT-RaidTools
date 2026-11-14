@@ -117,7 +117,7 @@ end
 -- ---------------------------------------------------------------------------------------------
 local cfg = constants.raidSort
 
-local function member(name, role, gs, rank) return {name = name, role = role, gs = gs, rank = rank} end
+local function member(name, role, gs) return {name = name, role = role, gs = gs} end
 
 -- Plays NextMove against the game's placement rules (SortPlan.Apply) until it has nothing to do.
 -- Returns the final layout, the number of moves, and an error text when something went wrong.
@@ -153,7 +153,7 @@ local function randomRaid(size, seed)
     local roles = {"tank", "healer", "other", "other", "other"}
     local members = {}
     for i = 1, size do
-        members[i] = member("P" .. i, roles[math.random(#roles)], math.random(1000, 4000), math.random(0, 3) > 0 and math.random(3) or nil)
+        members[i] = member("P" .. i, roles[math.random(#roles)], math.random(1000, 4000))
     end
     return members
 end
@@ -174,8 +174,80 @@ do
     equal(desired[2], "T1", "class style: next tank after")
     equal(desired[21], "H2", "class style: best healer first in group 5")
     equal(desired[22], "H1", "class style: next healer")
-    equal(desired[6], "D2", "class style: best other in group 2")
-    equal(desired[7], "D1", "class style: next other")
+    equal(desired[3], "D2", "class style: short tank group 1 backfilled with the others")
+    equal(desired[4], "D1", "class style: backfilled others keep their order")
+    equal(desired[6], nil, "class style: group 2 emptied by the backfill")
+end
+
+local function others(count, from)
+    local list = {}
+    for i = 1, count do list[i] = member("D" .. (from + i - 1), "other", 2000 - (from + i - 1)) end
+    return list
+end
+local function with(list, extra)
+    for _, m in ipairs(extra) do list[#list + 1] = m end
+    return list
+end
+
+-- Class style: group 1 backfilled with the best others; tankless group 6 comes after groups 2-4
+do
+    local desired = SortPlan.Build(with({member("T1", "tank", 3000)}, others(25, 1)), cfg)
+    equal(desired[1], "T1", "class: tank on top of group 1")
+    equal(desired[2], "D1", "class: best other backfills group 1")
+    equal(desired[5], "D4", "class: group 1 full")
+    equal(desired[6], "D5", "class: next other starts group 2")
+    equal(desired[20], "D19", "class: groups 2-4 full")
+    equal(desired[26], "D20", "class: tankless group 6 filled after group 4")
+    equal(desired[30], "D24", "class: group 6 full")
+    equal(desired[31], "D25", "class: then group 7")
+end
+
+-- Tankless group 6 stays empty while groups 2-4 have room
+do
+    local desired = SortPlan.Build(with({member("T1", "tank", 3000)}, others(10, 1)), cfg)
+    equal(desired[26], nil, "class: group 6 untouched while groups 2-4 have room")
+    equal(desired[11], "D10", "class: others still in group 3")
+end
+
+-- Group 6 with a tank is backfilled right after group 1
+do
+    local members = {}
+    for i = 1, 6 do members[i] = member("T" .. i, "tank", 3000 - i) end
+    local desired = SortPlan.Build(with(members, others(12, 1)), cfg)
+    equal(desired[26], "T6", "class: sixth tank in group 6")
+    equal(desired[27], "D1", "class: group 6 backfilled with the best others")
+    equal(desired[30], "D4", "class: group 6 full")
+    equal(desired[6], "D5", "class: rest of the others start in group 2")
+end
+
+-- Healer overflow joins the bottom of the tanks
+do
+    local members = {member("T1", "tank", 100)}
+    for i = 1, 11 do members[#members + 1] = member("H" .. i, "healer", 3000 - i) end
+    local desired = SortPlan.Build(members, cfg)
+    equal(desired[21], "H1", "class: best healer in group 5")
+    equal(desired[46], "H6", "class: sixth healer in group 10")
+    equal(desired[1], "T1", "class: real tank first")
+    equal(desired[2], "H11", "class: overflow healer after the tanks")
+end
+
+-- Tank overflow goes to the top of the others
+do
+    local members = {}
+    for i = 1, 11 do members[i] = member("T" .. i, "tank", 3000 - i) end
+    local desired = SortPlan.Build(with(members, {member("D1", "other", 9999)}), cfg)
+    equal(desired[30], "T10", "class: tank groups full")
+    equal(desired[6], "T11", "class: overflow tank before the others")
+    equal(desired[7], "D1", "class: others after the overflow tank")
+end
+
+-- Others beyond the other groups (and tankless group 6) go to group 10
+do
+    local desired = SortPlan.Build(with({member("T1", "tank", 3000)}, others(41, 1)), cfg)
+    equal(desired[26], "D20", "class: tankless group 6 after group 4")
+    equal(desired[45], "D39", "class: other groups full")
+    equal(desired[46], "D40", "class: then group 10")
+    equal(desired[47], "D41", "class: group 10 packed from the top")
 end
 
 -- Party style: each group is tank, others, healer
