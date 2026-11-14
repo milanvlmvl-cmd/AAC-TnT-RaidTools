@@ -1,23 +1,26 @@
 local api = require("api")
 local constants = require("AAC-TnT-RaidTools/core/constants")
 local settings = require("AAC-TnT-RaidTools/core/settings")
-local trace = require("AAC-TnT-RaidTools/core/trace")
+local Guard = require("AAC-TnT-RaidTools/core/guard")
+local Roster = require("AAC-TnT-RaidTools/core/roster")
 local SortPlan = require("AAC-TnT-RaidTools/core/sortplan")
 local Authority = require("AAC-TnT-RaidTools/core/authority")
 local AfkWatch = require("AAC-TnT-RaidTools/features/afkwatch")
+local Roles = require("AAC-TnT-RaidTools/features/roles")
+local PlayerStore = require("AAC-TnT-RaidTools/features/playerstore")
 
--- When enabled, keeps the raid ordered: tanks in groups 1 and 6, healers in 5 and 10, everyone
--- else in 2, 3, 4, 7, 8, 9, each group sorted by gear score (highest first). It re-reads the raid
--- every few seconds (a gear score or class is only readable while a member is in range) and soon
--- after someone joins or leaves, then moves one member at a time. Moving onto an occupied slot swaps the two, so each move is
--- confirmed in the roster before the next is planned.
+-- When enabled, keeps the raid ordered (layout depends on the sort style, see core/sortplan.lua),
+-- each group sorted by gear score (highest first). It re-reads the raid every few seconds (a gear
+-- score or class is only readable while a member is in range) and soon after someone joins or
+-- leaves, then moves one member at a time. Moving onto an occupied slot swaps the two, so each move
+-- is confirmed in the roster before the next is planned.
 local RaidSort = {}
 
 local cfg = constants.raidSort
 
 local live = false
 local timer = 0 -- ms until the next run
-local clock = 0 -- ms since load, advanced by UPDATE
+local clock = 0 -- ms since load, advanced by Update
 local movesThisRun = 0
 -- A move is a swap when the target slot is occupied, and the game applies it a moment later.
 -- Until the roster shows the member in their new slot the move is "pending": no further move is
@@ -26,252 +29,71 @@ local pending = nil -- {name, from, to, at}
 local halted = false -- a move never took effect (and retrying did not help): stop until the roster changes
 local queued = nil -- a planned move waiting out cfg.sendDelayMs before it is sent: {name, from, to}
 local failedMoves = 0 -- consecutive moves that never showed up in the roster; reset when one does
-local rosterSignature = nil
+local seenRoster = nil -- roster signature as of the last pass (nil: treat the next one as new)
+local knownNames = nil -- roster signature as of the last join/leave seen
 
 -- last readable value per player name, used while they are out of range
 local gearCache, classCache, skillCache = {}, {}, {}
 
-local roleByClass = {} -- lowercase class name -> "tank" | "healer" (explicit class lists)
+-- API calls can be missing in this game build or fail for out-of-range units: protected.
+local safe = Guard.Silent
 
--- Sort trace lines (moves, roster changes, stops) are only written while debug logging is on.
-local function log(text)
-    if not settings.Get("DebugChat") then return end
-    trace.Add("[raidsort] " .. text)
+local function resetRun()
+    halted, movesThisRun, pending, failedMoves, queued = false, 0, nil, 0, nil
 end
 
--- API calls can be missing in this game build (IsPartyRaid is) or fail for out-of-range units.
--- Run them protected, log each distinct failure once, and return nil instead of raising.
-local loggedFailures = {}
-local function safe(label, fn)
-    local ok, value = pcall(fn)
-    if ok then return value end
-    local message = label .. " failed: " .. tostring(value)
-    if not loggedFailures[message] then
-        loggedFailures[message] = true
-        log(message)
-    end
-    return nil
-end
-
-local function buildRoleLookup()
-    roleByClass = {}
-    for _, name in ipairs(cfg.healerClasses) do roleByClass[name:lower()] = "healer" end
-    for _, name in ipairs(cfg.tankClasses) do roleByClass[name:lower()] = "tank" end -- tank wins a tie
-end
-
--- Name players know for a skillset id: the game's internal name run through
--- cfg.skillsetDisplayNames (unknown internal names are kept as they are).
-local function skillsetName(id)
-    local internal = safe("GetSkillsetNameById", function() return api.Ability:GetSkillsetNameById(id) end)
-    if type(internal) ~= "string" or internal == "" then return nil end
-    return cfg.skillsetDisplayNames[internal:lower()] or internal
-end
-
--- The player's three skillset ids (the unit info's `class` table, keys "1".."3"), or nil when the
--- unit cannot be read (out of range).
-local function readSkillsetIds(unit)
-    local unitId = safe("GetUnitId", function() return api.Unit:GetUnitId(unit) end)
-    if unitId == nil then return nil end
-    local info = safe("GetUnitInfoById", function() return api.Unit:GetUnitInfoById(unitId) end)
-    local classTable = type(info) == "table" and info.class or nil
-    if type(classTable) ~= "table" then return nil end
-    local ids = {}
-    for i = 1, 3 do
-        local id = classTable[i] or classTable[tostring(i)]
-        if id ~= nil then ids[#ids + 1] = id end
-    end
-    if #ids == 0 then return nil end
-    return ids
-end
-
-local function hasAnySkill(names, words)
-    for _, name in ipairs(names) do
-        for _, word in ipairs(words) do
-            if name:find(word:lower(), 1, true) ~= nil then return true end
-        end
-    end
-    return false
-end
-
--- "tank" / "healer" / nil from a player's skillset ids: a tank skillset makes a tank; else a healer
--- skillset makes a healer unless the player also has an excluded (damage) skillset.
-local function roleFromSkillsets(ids)
-    local names = {}
-    for _, id in ipairs(ids) do
-        local name = skillsetName(id)
-        if name ~= nil then names[#names + 1] = name:lower() end
-    end
-    if hasAnySkill(names, cfg.tankSkillsets) then return "tank" end
-    if hasAnySkill(names, cfg.healerSkillsets) and not hasAnySkill(names, cfg.healerExcludedSkillsets) then
-        return "healer"
-    end
-    return nil
-end
-
--- Sub-sort rank for the "others": position (1 = first) of the first skillset in
--- cfg.otherSkillsetOrder that the player has; nil when they have none of them (or are unreadable).
-local function otherRank(ids)
-    if ids == nil then return nil end
-    local names = {}
-    for _, id in ipairs(ids) do
-        local name = skillsetName(id)
-        if name ~= nil then names[name:lower()] = true end
-    end
-    for rank, wanted in ipairs(cfg.otherSkillsetOrder) do
-        if names[wanted:lower()] then return rank end
-    end
-    return nil
-end
-
--- Role and how it was decided: the explicit class lists first, then the player's skillsets.
-local function decideRole(className, skillIds)
-    local fromClass = roleByClass[(className or ""):lower()]
-    if fromClass ~= nil then return fromClass, "class" end
-    if skillIds ~= nil then
-        local fromSkills = roleFromSkillsets(skillIds)
-        if fromSkills ~= nil then return fromSkills, "skills" end
-    end
-    return "other", "none"
-end
-
--- Gear score as a positive number, or nil (unknown / out of range). Handles a plain number or a
--- table with a gear score field, as PlayerDB does.
-local GEAR_KEYS = {"gearScore", "gear_score", "gearscore", "total", "score", "value"}
-local function toGearScore(value)
-    if type(value) == "table" then
-        for _, key in ipairs(GEAR_KEYS) do
-            local found = tonumber(value[key])
-            if found ~= nil and found > 0 then return found end
-        end
-        return nil
-    end
-    local number = tonumber(value)
-    if number == nil or number <= 0 then return nil end
-    return number
-end
-
-local function readClass(unit)
-    local class = safe("GetUnitClassName", function() return api.Ability:GetUnitClassName(unit) end)
-    if type(class) == "table" then class = class.name or class.className or class.class_name end
-    if type(class) == "string" and class ~= "" then return class end
-    return nil
-end
-
--- ---------------------------------------------------------------------------------------------
--- "Save GS+Class": real scanned values are kept on disk (cfg.dump.folder, one .dat file per player)
--- and used for a player whose class or gear score cannot be read right now (out of range).
--- ---------------------------------------------------------------------------------------------
-local savedOnDisk = {} -- name -> {class, gs} last written or read, so unchanged values are not rewritten
-local diskChecked = {} -- name -> true once the folder was checked for them this load
-local liveClass, liveGs = {}, {} -- name -> value actually read from the game in this raid (never from disk)
-local savedThisRaid = {} -- name -> true once their file was written for this raid
-
-local function fileNameFor(name)
-    return (name:gsub("[^%w_%-]", "_"))
-end
-
-local function playerFile(name)
-    return cfg.dump.folder .. "/" .. fileNameFor(name) .. ".dat"
-end
-
--- Class and gear score from the player's file (nil, nil when there is none). Dump-mode files have the
--- same className / gearScore fields, so they work too.
-local function loadFromDisk(name)
-    diskChecked[name] = true
-    local record = safe("File:Read", function() return api.File:Read(playerFile(name)) end)
-    if type(record) ~= "table" then return nil, nil end
-    local class = record.className
-    if type(class) == "table" then class = class.name or class.className or class.class_name end
-    if type(class) ~= "string" or class == "" then class = nil end
-    local gs = toGearScore(record.gearScore)
-    savedOnDisk[name] = {class = class, gs = gs}
-    return class, gs
-end
-
-local function saveToDisk(name, class, gs)
-    local last = savedOnDisk[name]
-    if last ~= nil and last.class == class and last.gs == gs then return true end -- file already has these values
-    local record = {name = name, className = class, gearScore = gs}
-    local ok = safe("File:Write", function() api.File:Write(playerFile(name), record) return true end)
-    if ok then
-        savedOnDisk[name] = {class = class, gs = gs}
-        log("saved " .. name .. ": " .. tostring(class) .. " gs=" .. tostring(gs))
-    end
-    return ok and true or false
-end
-
--- A new raid starts when the raid is left or disbanded (nobody but you left): everyone may be saved once more.
-local function startNewRaid()
-    liveClass, liveGs, savedThisRaid = {}, {}, {}
-end
-
--- Everyone in the raid as {name, slot, class, role, gs}. A class or gear score that cannot be read
--- (out of range, API failure) falls back to the last readable value for that player, and then to
--- class "unknown" (role "other") and a fake gear score equal to the name length (far below any real
--- score, so unknowns sort last in a steady order), so nobody is ever left out of the plan.
+-- Everyone in the raid as {name, slot, unit, class, role, roleSource, color, gs}. A class or gear
+-- score that cannot be read (out of range, API failure) falls back to the last readable value for that
+-- player (or, with "Save GS+Class", the one saved on disk), and then to class "unknown" (role
+-- "other") and a fake gear score equal to the name length (far below any real score, so unknowns sort
+-- last in a steady order), so nobody is ever left out of the plan.
 local function readRoster()
     local members = {}
     local saveGsClass = settings.Get("RaidSortSaveGsClass")
-    local playerSlot = safe("GetTeamPlayerIndex", function() return api.Team:GetTeamPlayerIndex() end)
-    for slot = 1, cfg.maxMembers do
-        local unit = (slot == playerSlot) and "player" or ("team" .. slot)
-        local name = safe("UnitName", function() return api.Unit:UnitName(unit) end)
-        if type(name) == "string" and name ~= "" then
-            local class = readClass(unit)
-            if class ~= nil then classCache[name] = class end
-            local gs = toGearScore(safe("UnitGearScore", function() return api.Unit:UnitGearScore(unit) end))
-            if gs ~= nil then gearCache[name] = gs end
-            if saveGsClass then
-                -- still missing after the live read and the in-memory cache: try the player's file once
-                if (classCache[name] == nil or gearCache[name] == nil) and not diskChecked[name] then
-                    local diskClass, diskGs = loadFromDisk(name)
-                    if classCache[name] == nil and diskClass ~= nil then classCache[name] = diskClass end
-                    if gearCache[name] == nil and diskGs ~= nil then gearCache[name] = diskGs end
-                end
-                -- Only real reads count (not cached or disk values). Once both class and gear score have
-                -- been read live in this raid, write them once; the file is not touched again this raid.
-                if class ~= nil then liveClass[name] = class end
-                if gs ~= nil then liveGs[name] = gs end
-                if not savedThisRaid[name] and liveClass[name] ~= nil and liveGs[name] ~= nil then
-                    if saveToDisk(name, liveClass[name], liveGs[name]) then savedThisRaid[name] = true end
-                end
+    Roster.Each(function(slot, unit, name)
+        local class = Roles.ReadClass(unit)
+        if class ~= nil then classCache[name] = class end
+        local gs = Roles.ReadGearScore(unit)
+        if gs ~= nil then gearCache[name] = gs end
+        if saveGsClass then
+            -- still missing after the live read and the in-memory cache: try the player's file once
+            if classCache[name] == nil or gearCache[name] == nil then
+                local diskClass, diskGs = PlayerStore.Lookup(name)
+                if classCache[name] == nil and diskClass ~= nil then classCache[name] = diskClass end
+                if gearCache[name] == nil and diskGs ~= nil then gearCache[name] = diskGs end
             end
-            local knownClass = classCache[name]
-            local skillIds = readSkillsetIds(unit)
-            if skillIds ~= nil then skillCache[name] = skillIds end
-            local role, source = decideRole(knownClass, skillCache[name])
-            -- last resort, only when neither class nor skillsets can be read: the role colour the
-            -- player picked in the raid window (GetRole's id, mapped by cfg.roleColors)
-            local colorId = safe("GetRole", function() return api.Team:GetRole(slot) end)
-            if source == "none" and knownClass == nil and skillCache[name] == nil then
-                local fromColor = cfg.roleColors[colorId]
-                if fromColor ~= nil then role, source = fromColor, "color" end
-            end
-            members[#members + 1] = {
-                name = name, slot = slot, unit = unit,
-                class = knownClass or "unknown",
-                role = role, roleSource = source, color = colorId,
-                rank = otherRank(skillCache[name]),
-                gs = gearCache[name] or #name, -- unknown: fake a tiny score from the name length, stable across joins/leaves
-            }
+            PlayerStore.Observe(name, class, gs) -- only real reads count, not cached or disk values
         end
-    end
-    if #members <= 1 then startNewRaid() end -- alone: the raid is over
+        local knownClass = classCache[name]
+        local skillIds = Roles.ReadSkillsetIds(unit)
+        if skillIds ~= nil then skillCache[name] = skillIds end
+        local role, source = Roles.Decide(knownClass, skillCache[name])
+        -- last resort, only when neither class nor skillsets can be read: the role colour the
+        -- player picked in the raid window (GetRole's id, mapped by cfg.roleColors)
+        local colorId = safe("GetRole", function() return api.Team:GetRole(slot) end)
+        if source == "none" and knownClass == nil and skillCache[name] == nil then
+            local fromColor = cfg.roleColors[colorId]
+            if fromColor ~= nil then role, source = fromColor, "color" end
+        end
+        members[#members + 1] = {
+            name = name, slot = slot, unit = unit,
+            class = knownClass or "unknown",
+            role = role, roleSource = source, color = colorId,
+            gs = gearCache[name] or #name, -- unknown: fake a tiny score from the name length, stable across joins/leaves
+        }
+    end, safe)
+    if #members <= 1 then PlayerStore.NewRaid() end -- alone: the raid is over
     return members
 end
 
 -- Whether we are in a raid (not a party). IsPartyRaid is missing in this game build, so fall back
 -- to IsPartyTeam, and if neither exists assume a raid.
-local raidCheckLogged = false
 local function inRaid()
     local team = api.Team
     local method, invert
     if type(team.IsPartyRaid) == "function" then method = "IsPartyRaid"
     elseif type(team.IsPartyTeam) == "function" then method, invert = "IsPartyTeam", true end
-    if method == nil then
-        if not raidCheckLogged then raidCheckLogged = true; log("no IsPartyRaid/IsPartyTeam in this build; assuming raid") end
-        return true
-    end
+    if method == nil then return true end
     local result = safe(method, function() return team[method](team) end)
     if result == nil then return true end -- could not tell: do not block the sort
     if invert then return not result end
@@ -279,197 +101,39 @@ local function inRaid()
 end
 
 local function signatureOf(members)
-    local parts = {}
-    for _, m in ipairs(members) do parts[#parts + 1] = m.name end
-    table.sort(parts)
-    return table.concat(parts, ",")
-end
-
--- Names currently in the raid, in the same form as signatureOf, read cheaply (no class / gear lookups).
-local knownNames = nil -- names as of the last join/leave seen
-local function rosterNames()
     local names = {}
-    local playerSlot = safe("GetTeamPlayerIndex", function() return api.Team:GetTeamPlayerIndex() end)
-    for slot = 1, cfg.maxMembers do
-        local unit = (slot == playerSlot) and "player" or ("team" .. slot)
-        local name = safe("UnitName", function() return api.Unit:UnitName(unit) end)
-        if type(name) == "string" and name ~= "" then names[#names + 1] = name end
-    end
-    table.sort(names)
-    return table.concat(names, ",")
+    for i, m in ipairs(members) do names[i] = m.name end
+    return Roster.Join(names)
 end
 
-local function describe(m)
-    return m.name .. "(" .. m.class .. "/" .. m.role
-        .. ((m.roleSource == "skills" or m.roleSource == "color") and ("[" .. m.roleSource .. "]") or "")
-        .. " color=" .. tostring(m.color) .. " gs=" .. m.gs .. " slot=" .. m.slot .. ")"
+-- Confirm or fail the move sent earlier. Returns "waiting" while it may still show up, "halt" when
+-- the sort must stop, or nil when there is nothing left to wait for (planning can go on).
+local function checkPending(current)
+    if pending == nil then return nil end
+    if current[pending.to] == pending.name then
+        pending = nil -- the swap went through; plan the next move from the new layout
+        failedMoves = 0
+        return nil
+    end
+    if clock - pending.at < cfg.moveTimeoutMs then return "waiting" end
+    local failed = pending
+    pending = nil
+    failedMoves = failedMoves + 1
+    if Authority.IsLead() and failedMoves <= cfg.maxRetries then
+        -- we do have lead, so the move was lost or the layout changed under us: plan again
+        -- from the roster as it is now (the next pass re-reads it)
+        return "waiting"
+    end
+    halted = true
+    return "halt"
 end
 
-local probeIndex, probeDone, probePending, probeMissingLogged = 1, false, nil, false
-
-local function resetRun()
-    halted, movesThisRun, pending, failedMoves, queued = false, 0, nil, 0, nil
-end
-
--- ---------------------------------------------------------------------------------------------
--- Dump mode: one file per raid member describing their class and skillsets (see constants.dump)
--- ---------------------------------------------------------------------------------------------
-local dumped = {} -- player name -> true, once their file is written for this enable
-
--- Plain copy of a game table that file serialisation can handle: functions dropped, userdata and
--- other types turned into text, depth limited.
-local function copyPlain(value, depth)
-    local kind = type(value)
-    if kind == "string" or kind == "number" or kind == "boolean" then return value end
-    if kind == "table" then
-        if (depth or 0) >= 5 then return "<table too deep>" end
-        local copy = {}
-        for key, item in pairs(value) do
-            local itemKind = type(item)
-            if itemKind ~= "function" then
-                local keyKind = type(key)
-                local plainKey = (keyKind == "string" or keyKind == "number") and key or tostring(key)
-                copy[plainKey] = copyPlain(item, (depth or 0) + 1)
-            end
-        end
-        return copy
-    end
-    if value == nil then return nil end
-    return tostring(value)
-end
-
-local function dumpMember(member)
-    local unit = member.unit
-    local unitId = safe("GetUnitId", function() return api.Unit:GetUnitId(unit) end)
-    local infoById = unitId ~= nil and safe("GetUnitInfoById", function() return api.Unit:GetUnitInfoById(unitId) end) or nil
-    local info = safe("UnitInfo", function() return api.Unit:UnitInfo(unit) end)
-    local record = {
-        name = member.name,
-        slot = member.slot,
-        unit = unit,
-        className = safe("GetUnitClassName", function() return api.Ability:GetUnitClassName(unit) end),
-        unitClass = safe("UnitClass", function() return api.Unit:UnitClass(unit) end),
-        gearScore = copyPlain(safe("UnitGearScore", function() return api.Unit:UnitGearScore(unit) end)),
-        raidSortRole = member.role,
-        raidSortRoleSource = member.roleSource,
-    }
-    -- the three skillset ids live in the unit info's `class` table, keys "1".."3"
-    local classTable = (type(infoById) == "table" and infoById.class) or (type(info) == "table" and info.class) or nil
-    local ids, names = {}, {}
-    if type(classTable) == "table" then
-        for i = 1, 3 do
-            local id = classTable[i] or classTable[tostring(i)]
-            ids[i] = id
-            names[i] = id ~= nil and safe("GetSkillsetNameById", function() return api.Ability:GetSkillsetNameById(id) end) or nil
-        end
-    end
-    record.skillsetIds = ids
-    record.skillsetNames = names -- the game's internal names
-    local display = {}
-    for i = 1, 3 do display[i] = ids[i] ~= nil and skillsetName(ids[i]) or nil end
-    record.skillsetDisplayNames = display -- after the lookup in constants.raidSort.skillsetDisplayNames
-    if ids[1] ~= nil and ids[2] ~= nil and ids[3] ~= nil then
-        record.classFromSkillsetIds = safe("GetClassNameFromSkillsetIds", function()
-            return api.Ability:GetClassNameFromSkillsetIds(ids[1], ids[2], ids[3])
-        end)
-    end
-    record.unitInfoById = copyPlain(infoById)
-    record.unitInfo = copyPlain(info)
-
-    local path = cfg.dump.folder .. "/" .. fileNameFor(member.name) .. ".dat"
-    local ok = safe("File:Write", function() api.File:Write(path, record) return true end)
-    log("dump " .. member.name .. ": class " .. tostring(record.className) .. ", skillset ids "
-        .. tostring(ids[1]) .. "," .. tostring(ids[2]) .. "," .. tostring(ids[3]) .. " (" .. tostring(names[1])
-        .. "," .. tostring(names[2]) .. "," .. tostring(names[3]) .. ") -> " .. path .. (ok and "" or " WRITE FAILED"))
-    dumped[member.name] = true
-end
-
--- Write a file for every member that does not have one yet this enable (out-of-range members are
--- picked up on a later pass once they can be read).
-local function dumpRoster(members)
-    local written = 0
-    for _, member in ipairs(members) do
-        if not dumped[member.name] then
-            dumpMember(member)
-            written = written + 1
-        end
-    end
-    if written > 0 then log("dump: wrote " .. written .. " player files to " .. cfg.dump.folder) end
-end
-
-local function resetProbe()
-    probeIndex, probeDone, probePending, probeMissingLogged = 1, false, nil, false
-end
-
--- "g2[6]=Ann [7]=- ..." for the group(s) containing the given slots, for the probe's log lines.
-local function dumpGroups(current, slots)
-    local seen, parts = {}, {}
-    for _, slot in ipairs(slots) do
-        local group = math.ceil(slot / cfg.groupSize)
-        if not seen[group] then
-            seen[group] = true
-            local cells = {}
-            for s = (group - 1) * cfg.groupSize + 1, group * cfg.groupSize do
-                cells[#cells + 1] = "[" .. s .. "]=" .. (current[s] or "-")
-            end
-            parts[#parts + 1] = "g" .. group .. " " .. table.concat(cells, " ")
-        end
-    end
-    return table.concat(parts, " | ")
-end
-
--- Probe: move one character to each configured slot, one at a time, and log what the game did.
--- Returns "moved" / "waiting" / false like runOnce.
-local function runProbe(current)
-    local probe = cfg.probe
-    if probeDone then return false end
-    local slotOf
-    for slot, name in pairs(current) do if name == probe.name then slotOf = slot end end
-    if slotOf == nil then
-        if not probeMissingLogged then
-            probeMissingLogged = true
-            log("probe: " .. probe.name .. " is not in the raid")
-        end
-        return false
-    end
-
-    if probePending ~= nil then
-        local waited = clock - probePending.at
-        if slotOf == probePending.from and waited < cfg.moveTimeoutMs then return "waiting" end
-        local outcome
-        if slotOf == probePending.from then outcome = "did not move (waited " .. waited .. "ms)"
-        elseif slotOf == probePending.asked then outcome = "landed in the slot asked for"
-        else outcome = "landed in slot " .. slotOf .. " (asked for " .. probePending.asked .. ")" end
-        log("probe " .. probe.name .. " " .. probePending.from .. " -> asked " .. probePending.asked
-            .. ": " .. outcome .. ". Occupant of asked slot before: " .. (probePending.occupant or "none")
-            .. ". After: " .. dumpGroups(current, {probePending.from, probePending.asked, slotOf}))
-        probePending = nil
-        probeIndex = probeIndex + 1
-    end
-
-    local asked = probe.slots[probeIndex]
-    while asked ~= nil and asked == slotOf do
-        log("probe: " .. probe.name .. " is already in slot " .. asked)
-        probeIndex = probeIndex + 1
-        asked = probe.slots[probeIndex]
-    end
-    if asked == nil then
-        probeDone = true
-        log("probe finished; sorting stays off while constants.raidSort.probe.enabled is true")
-        return false
-    end
-    log("probe: moving " .. probe.name .. " from slot " .. slotOf .. " to slot " .. asked
-        .. ". Before: " .. dumpGroups(current, {slotOf, asked}))
-    probePending = {from = slotOf, asked = asked, occupant = current[asked], at = clock}
-    safe("MoveTeamMember", function() api.Team:MoveTeamMember(slotOf, asked) end)
-    return "moved"
-end
-
--- One pass: read the raid and make at most one move. Returns "moved" after sending a move,
--- "waiting" while the previous move has not shown up in the roster yet, false otherwise.
+-- One pass: read the raid and plan at most one move. Returns "queued" after planning a move (sent by
+-- sendQueued), "waiting" while the previous move has not shown up in the
+-- roster yet, false otherwise.
 local function runOnce()
     if not inRaid() then
-        startNewRaid()
+        PlayerStore.NewRaid()
         return false
     end
     if not Authority.CanManage() then
@@ -479,83 +143,45 @@ local function runOnce()
     end
     local members = readRoster()
     local signature = signatureOf(members)
-    if signature ~= rosterSignature then
-        if rosterSignature ~= nil and signature ~= knownNames then
+    if signature ~= seenRoster then
+        local missedEvent = seenRoster ~= nil and signature ~= knownNames
+        knownNames = signature
+        seenRoster = signature
+        resetRun()
+        if missedEvent then
             -- someone joined or left without the team event reaching us: settle first
-            knownNames = signature
-            rosterSignature = signature
-            resetRun()
             timer = cfg.settleMs
-            log("roster changed without an event; waiting " .. cfg.settleMs .. "ms to settle")
             return false
         end
-        knownNames = signature
-        rosterSignature = signature
-        resetRun()
-        local parts = {}
-        for _, m in ipairs(members) do parts[#parts + 1] = describe(m) end
-        log("roster changed: " .. table.concat(parts, " "))
-    end
-    if cfg.dump and cfg.dump.enabled then
-        dumpRoster(members)
-        return false -- no sorting while dumping
     end
     if halted then return false end
 
     local current = {}
     for _, m in ipairs(members) do current[m.slot] = m.name end
 
-    if pending ~= nil then
-        if current[pending.to] == pending.name then
-            pending = nil -- the swap went through; plan the next move from the new layout
-            failedMoves = 0
-        elseif clock - pending.at < cfg.moveTimeoutMs then
-            return "waiting"
-        else
-            local failed = pending
-            pending = nil
-            failedMoves = failedMoves + 1
-            local text = failed.name .. " did not move from slot " .. failed.from .. " to " .. failed.to
-                .. " within " .. cfg.moveTimeoutMs .. "ms"
-            if Authority.IsLead() and failedMoves <= cfg.maxRetries then
-                -- we do have lead, so the move was lost or the layout changed under us: plan again
-                -- from the roster as it is now (the next pass re-reads it)
-                log(text .. "; you are lead, rebuilding the plan (retry " .. failedMoves .. "/" .. cfg.maxRetries .. ")")
-                return "waiting"
-            end
-            halted = true
-            log("stopping: " .. text .. (Authority.IsLead() and (" (" .. cfg.maxRetries .. " retries failed)") or " (you are not raid lead)"))
-            return false
-        end
-    end
-
-    if cfg.probe and cfg.probe.enabled then return runProbe(current) end
+    local state = checkPending(current)
+    if state == "waiting" then return "waiting" end
+    if state == "halt" then return false end
 
     local desired
-    if settings.Get("RaidSortStyle") == 2 then
+    if settings.Get("RaidSortStyle") == constants.sortStyle.party then
         desired = SortPlan.BuildStyle2(members, cfg)
     else
         desired = SortPlan.Build(members, cfg)
     end
-    local from, to, why = SortPlan.NextMove(current, desired, cfg.maxMembers, cfg.groupSize)
+    local from, to = SortPlan.NextMove(current, desired, cfg.maxMembers, cfg.groupSize)
     if from == nil then
-        if movesThisRun > 0 then log("raid sorted after " .. movesThisRun .. " moves") end
         movesThisRun = 0
         return false
     end
     if movesThisRun >= cfg.maxMovesPerRun then
         halted = true
-        log("stopping: reached " .. cfg.maxMovesPerRun .. " moves in one run")
         return false
     end
 
     movesThisRun = movesThisRun + 1
-    local mover, displaced = current[from], current[to]
-    log("move " .. mover .. " slot " .. from .. " -> " .. to
-        .. (displaced and (" (swaps with " .. displaced .. ")") or " (free slot)")
-        .. (why and (" [" .. why .. "]") or "") .. " #" .. movesThisRun)
     -- sent after cfg.sendDelayMs, see sendQueued
-    queued = {name = mover, from = from, to = to}
+    queued = {name = current[from], from = from, to = to}
     return "queued"
 end
 
@@ -568,20 +194,14 @@ local function sendQueued()
     safe("MoveTeamMember", function() api.Team:MoveTeamMember(move.from, move.to) end)
 end
 
-local function onUpdate(dt)
+-- Called every frame with the milliseconds since the last one (registered with the Ticker in main.lua).
+function RaidSort.Update(dt)
     if not live then return end
-    -- the AFK watch shares this callback (api.On keeps only one per event)
-    local watchOk, watchErr = pcall(AfkWatch.Update, dt)
-    if not watchOk then log("afk watch update failed: " .. tostring(watchErr)) end
     clock = clock + dt
     if not settings.Get("RaidSortEnabled") then return end
-    if not settings.Get("InvitesEnabled") then
-        -- the global switch is off: no sorting, and nothing half sent when it comes back on
-        queued, pending = nil, nil
-        return
-    end
-    if AfkWatch.Blocks() then
-        -- you are AFK (and "Disable if afk" is ticked): no sorting, nothing half sent when you are back
+    -- The invites switch is the global switch of the addon: while it is off (or you are AFK with
+    -- "Disable if afk" ticked) nothing is sorted, and nothing is left half sent for when it comes back.
+    if not settings.Get("InvitesEnabled") or AfkWatch.Blocks() then
         queued, pending = nil, nil
         return
     end
@@ -594,7 +214,6 @@ local function onUpdate(dt)
     end
     local result = safe("raid sort pass", runOnce)
     if result == "queued" then timer = cfg.sendDelayMs
-    elseif result == "moved" then timer = cfg.moveDelayMs
     elseif result == "waiting" then timer = cfg.pollMs
     else timer = cfg.recheckMs end
 end
@@ -604,9 +223,9 @@ end
 -- also fire this for moves within the raid) are ignored so they do not delay the sort.
 local function onTeamChanged()
     if not live then return end
-    local names = rosterNames()
+    local names = Roster.Signature(safe)
     if names == knownNames then return end
-    if not names:find(",", 1, true) then startNewRaid() end -- left or disbanded: next raid saves again
+    if not names:find(",", 1, true) then PlayerStore.NewRaid() end -- left or disbanded: next raid saves again
     knownNames = names
     resetRun()
     timer = cfg.settleMs
@@ -614,25 +233,16 @@ end
 
 function RaidSort.OnLoad()
     live = true
-    AfkWatch.Reset()
     timer = cfg.settleMs
-    rosterSignature = nil
+    seenRoster = nil
     knownNames = nil
-    dumped = {}
-    savedOnDisk, diskChecked = {}, {}
-    startNewRaid()
+    PlayerStore.Reset()
     resetRun()
-    resetProbe()
-    buildRoleLookup()
-    api.On("UPDATE", onUpdate)
     api.On("TEAM_MEMBERS_CHANGED", onTeamChanged)
-    log("raid sort ready (enabled=" .. tostring(settings.Get("RaidSortEnabled")) .. ")")
 end
 
 function RaidSort.OnUnload()
     live = false
-    AfkWatch.Reset()
-    api.On("UPDATE", function() return end)
     api.On("TEAM_MEMBERS_CHANGED", function() return end)
 end
 
@@ -640,19 +250,15 @@ end
 function RaidSort.SetEnabled(enabled)
     settings.Update("RaidSortEnabled", enabled)
     resetRun()
-    resetProbe()
-    dumped = {}
-    rosterSignature = nil -- log the roster again on the next pass
+    seenRoster = nil -- treat the next pass as a fresh roster
     timer = 0
-    log("raid sort " .. (enabled and "enabled" or "disabled"))
 end
 
 -- Called when the "Save GS+Class" checkbox changes: re-read the raid at the next update.
 function RaidSort.SetSaveGsClass(enabled)
     settings.Update("RaidSortSaveGsClass", enabled)
-    diskChecked = {}
+    PlayerStore.ForgetChecked()
     timer = 0
-    log("save gs+class " .. (enabled and "on" or "off"))
 end
 
 -- Called when the sort style changes: re-plan at the next update.
@@ -660,7 +266,6 @@ function RaidSort.SetStyle(style)
     settings.Update("RaidSortStyle", style)
     resetRun()
     timer = 0
-    log("raid sort style " .. tostring(style))
 end
 
 return RaidSort

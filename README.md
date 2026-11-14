@@ -19,7 +19,7 @@ Anyone who says an invite keyword in chat is invited to the raid.
   - **Match** - `equals` (whole message), `includes` (anywhere in the message) or `starts` (message begins with it).
   - **Blacklist mode** and **Whitelist mode** - `public`, `private` or `disabled`.
 - There is no limit on the number of invites. If a message matches more than one, only one invite is sent.
-- The **INVITES Enabled** checkbox in the main panel is a global switch for every invite. Turning it off keeps the list.
+- The **INVITES Enabled** checkbox in the main panel is the global switch of the addon. Turning it off stops every invite (the list is kept) and also pauses the raid sort.
 - Players already in the raid are skipped.
 
 ### Name lists
@@ -53,13 +53,17 @@ A player's role is decided in this order:
 The **Sort style** button switches between two layouts:
 
 - **Party** (default): every group is 1 tank, 3 others and 1 healer, top to bottom. Group 1 gets the highest gear score of each role. A group with no tank gets an extra other instead. A short group keeps its healer in the bottom slot.
-- **Class**: tanks go in groups 1 and 6, healers in groups 5 and 10, and everyone else in groups 2, 3, 4, 7, 8 and 9. Others are further grouped by skillset (Sorcery, then Archery, then Battlerage, then everything else), with an empty group between each when there is room.
+- **Class**: each role is sorted by gear score. Healers go in groups 5 and 10 (extra healers join the bottom of the tank list), tanks in groups 1 and 6 (extra tanks go first among the others). A tank group with free slots is filled with the best others: group 1 always, group 6 only when it has at least one tank. The remaining others go in groups 2, 3, 4, then group 6 if it has no tank, then 7, 8 and 9, then group 10.
 
 Slot layout and timings (settle time, retries, move limits) are all in `core/constants.lua` under `raidSort`.
 
 ## Raid lead requirement
 
 Auto invites and raid sort both need raid lead, so they pause (your settings are untouched) while you are in a raid of 2 or more without lead, and resume when you get it. Alone you are always allowed, since inviting someone is what makes you leader. The raid sort window shows a notice when it is paused, and a chat message is written when the state changes.
+
+## AFK pause
+
+The game exposes no AFK flag, so AFK is guessed from movement: if your character stays in the same spot for the chosen time (2, 5 or 10 minutes) you count as AFK. Tick **Disable if afk** in the main panel to pause the auto invites and the raid sort while you are AFK; they resume as soon as you move. The panel shows the current "afk ticks" count, and the invite and raid sort windows show a notice while paused.
 
 ## Settings
 
@@ -74,13 +78,25 @@ Saved under the addon folder name (`AAC-TnT-RaidTools`) using flat keys.
 | `LeadWhitelistEnabled`, `LeadWhitelist` | Restrict lead pass to a list of names |
 | `RaidSortEnabled` | Raid sort on/off |
 | `RaidSortStyle` | `2` = Party (default), `1` = Class |
-| `DebugChat` | Extra debug tracing |
+| `RaidSortSaveGsClass` | Save scanned gear score + class to the `players` folder |
+| `DisableInvitesWhenAfk`, `AfkMinutes` | Pause invites and raid sort while AFK, and the minutes (2, 5 or 10) before that counts |
 
-Older `Invite1*` / `Invite2*` settings are migrated into the `Invites` list on load (enabled ones only).
+Settings saved by versions before the `Invites` list (`Invite1*` / `Invite2*` keys) are no longer migrated: re-create those invites with the **+** button.
 
-## Debugging
+## Development
 
-Whisper `/debug` to yourself to toggle debug logging. While it is on, the addon writes a rolling trace (last 150 lines) of chat events, invite checks, authority changes and raid sort moves to `debug.lua` in the addon folder. Nothing is written while it is off.
+Code layout:
+
+- `main.lua` - addon entry point; wires the modules together and owns the single `UPDATE` callback (`core/ticker.lua`).
+- `core/` - game-independent logic: `matching` (names and phrases), `settings`, `sortplan` (raid layout planner), `constants`, plus small helpers (`notify`, `guard`, `roster`, `authority`, `ticker`).
+- `features/` - `raidtools` (invites, lead pass), `raidsort` (the sorter), `roles` and `playerstore` (what is known about a player) and `afkwatch`.
+- `ui/` - the panel, invite list, list editors, raid sort window and shared `widgets`.
+
+The tests cover matching, settings, the AFK counter and the raid sort planner (it plays the planner against a model of how the game places members). They need only a Lua 5.1 / LuaJIT interpreter and run in CI:
+
+```
+luajit tests/run.lua
+```
 
 ## Credits
 

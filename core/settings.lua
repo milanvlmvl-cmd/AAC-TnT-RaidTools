@@ -1,6 +1,6 @@
 local api = require("api")
 local constants = require("AAC-TnT-RaidTools/core/constants")
-local Logic = require("AAC-TnT-RaidTools/logic")
+local Matching = require("AAC-TnT-RaidTools/core/matching")
 
 local Settings = {}
 local addonName = constants.addonName
@@ -62,9 +62,6 @@ local defaultSettings = {
 
     RaidSortSaveGsClass = false, -- save a scanned player's real gear score + class to the players folder, and use it when they cannot be read
 
-    -- Diagnostics
-    DebugChat = false, -- extra trace lines for every chat event; toggled by whispering "/debug" to yourself
-
     -- Lead pass
     LeadPhrase = "lead",
     LeadChannel = "whisper", -- whisper | guild | raid
@@ -82,10 +79,6 @@ end
 
 function Settings.KeyExists(key)
     return key ~= nil and defaultSettings[key] ~= nil
-end
-
-function Settings.Is(key, value)
-    return Settings.Get(key) == value
 end
 
 function Settings.Get(key)
@@ -129,10 +122,11 @@ function Settings.SortInvites(list)
 end
 
 -- Active invites are always kept at the top of the stored list (first match wins, so this does not
--- change which invite fires: switched-off ones never match).
+-- change which invite fires: switched-off ones never match). Returns the number of active invites.
 function Settings.SetInvites(list)
-    Settings.SortInvites(list)
-    return Settings.Update("Invites", list)
+    local active = Settings.SortInvites(list)
+    Settings.Update("Invites", list)
+    return active
 end
 
 -- Setting key of the list an invite uses for kind "Blacklist" or "Whitelist", given that invite's
@@ -167,7 +161,6 @@ function Settings.LoadSettings()
     if type(loaded) ~= "table" then
         loaded = {}
     end
-    local hadInvites = type(loaded.Invites) == "table"
     -- Fill missing keys in memory only. Real values persist on the first Update(),
     -- so a failed load can never overwrite a user's file with defaults.
     for k, v in pairs(defaultSettings) do
@@ -175,48 +168,14 @@ function Settings.LoadSettings()
             loaded[k] = type(v) == "table" and copyList(v) or v
         elseif type(v) == "table" and type(loaded[k]) == "string" then
             -- migrate old comma separated string to an array
-            loaded[k] = Logic.splitNames(loaded[k])
-        end
-    end
-    -- the per-invite Blacklist/Whitelist "Enabled" checkboxes became a "disabled" mode:
-    -- an old unchecked box turns the mode to disabled, then the stale key is dropped
-    for index = 1, constants.legacyInviteSlots do
-        for _, kind in ipairs({"Blacklist", "Whitelist"}) do
-            local oldKey = "Invite" .. index .. kind .. "Enabled"
-            if loaded[oldKey] ~= nil then
-                if loaded[oldKey] == false then loaded["Invite" .. index .. kind .. "Mode"] = "disabled" end
-                loaded[oldKey] = nil
-            end
-        end
-    end
-    -- the fixed Invite1* / Invite2* settings became the Invites list: carry over the ones that were
-    -- enabled (an invite is now always active), then drop the old keys
-    if not hadInvites then
-        loaded.Invites = {}
-        for index = 1, constants.legacyInviteSlots do
-            local prefix = "Invite" .. index
-            if loaded[prefix .. "Enabled"] == true then
-                loaded.Invites[#loaded.Invites + 1] = {
-                    Phrase = loaded[prefix .. "Phrase"], Channel = loaded[prefix .. "Channel"], Match = loaded[prefix .. "Match"],
-                    BlacklistMode = loaded[prefix .. "BlacklistMode"], WhitelistMode = loaded[prefix .. "WhitelistMode"],
-                }
-            end
-        end
-    end
-    for index = 1, constants.legacyInviteSlots do
-        for _, suffix in ipairs({"Enabled", "Phrase", "Channel", "Match", "BlacklistMode", "WhitelistMode"}) do
-            loaded["Invite" .. index .. suffix] = nil
+            loaded[k] = Matching.splitNames(loaded[k])
         end
     end
     for i, invite in ipairs(loaded.Invites) do loaded.Invites[i] = normalizeInvite(invite) end
-    -- lead pass no longer offers "all"; move an old saved value to the default
-    local validLeadChannel = false
-    for _, name in ipairs(constants.leadChannelOrder) do
-        if loaded.LeadChannel == name then validLeadChannel = true end
-    end
-    if not validLeadChannel then loaded.LeadChannel = defaultSettings.LeadChannel end
+    -- a saved value that is no longer a valid choice goes back to the default
+    if not contains(constants.leadChannelOrder, loaded.LeadChannel) then loaded.LeadChannel = defaultSettings.LeadChannel end
     if not contains(constants.afk.minuteOptions, loaded.AfkMinutes) then loaded.AfkMinutes = defaultSettings.AfkMinutes end
-    if loaded.RaidSortStyle ~= 1 and loaded.RaidSortStyle ~= 2 then loaded.RaidSortStyle = defaultSettings.RaidSortStyle end
+    if not contains(constants.sortStyles, loaded.RaidSortStyle) then loaded.RaidSortStyle = defaultSettings.RaidSortStyle end
     return loaded
 end
 

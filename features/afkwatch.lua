@@ -1,12 +1,13 @@
 local api = require("api")
 local constants = require("AAC-TnT-RaidTools/core/constants")
-local trace = require("AAC-TnT-RaidTools/core/trace")
+local Notify = require("AAC-TnT-RaidTools/core/notify")
 local settings = require("AAC-TnT-RaidTools/core/settings")
 
 -- The game exposes no AFK flag, so AFK is guessed from movement. Every cfg.intervalMs your own world
 -- position (only yours, not raid members') is compared with the previous reading: staying within
 -- cfg.tolerance on x, y and z adds a point, a bigger move resets the points to 0. At
--- limit() points (the AfkMinutes setting) the player counts as AFK (for now that is only logged, to test the idea).
+-- limit() points (the AfkMinutes setting) the player counts as AFK. With "Disable if afk" ticked,
+-- AfkWatch.Blocks() then pauses the invites and the raid sort.
 local AfkWatch = {}
 
 local cfg = constants.afk
@@ -44,11 +45,6 @@ function AfkWatch.Step(state, x, y, z)
     return {x = x, y = y, z = z, points = points, afk = afk}, event
 end
 
-local function announce(text)
-    trace.Add("[afk] " .. text)
-    api.Log:Info("[" .. constants.displayName .. "] " .. text)
-end
-
 local function readPosition(unit)
     local ok, x, y, z = pcall(function() return api.Unit:UnitWorldPosition(unit) end)
     if ok and type(x) == "number" and type(y) == "number" and type(z) == "number" then return x, y, z end
@@ -64,14 +60,14 @@ local function check()
     local event
     state, event = AfkWatch.Step(state, x, y, z)
     if event == "afk" then
-        announce("You are AFK (" .. state.points .. " points, no movement for about "
+        Notify.Chat("You are AFK (" .. state.points .. " points, no movement for about "
             .. math.floor(state.points * cfg.intervalMs / 1000) .. "s)")
     elseif event == "back" then
-        announce("You moved again, no longer AFK")
+        Notify.Chat("You moved again, no longer AFK")
     end
 end
 
--- Called with the milliseconds since the last frame (from raidsort's UPDATE callback).
+-- Called with the milliseconds since the last frame (registered with the Ticker in main.lua).
 function AfkWatch.Update(dt)
     if type(dt) ~= "number" then return end
     elapsed = elapsed + dt

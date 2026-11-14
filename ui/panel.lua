@@ -16,24 +16,6 @@ local inviteList -- left of the raid window
 local editors = {} -- ["Blacklist"] / ["Whitelist"] / ["Lead"] -> ListPanel
 local make = Widgets.Make
 
-local function cycle(current, values)
-    for i, value in ipairs(values) do
-        if value == current then return values[i % #values + 1] end
-    end
-    return values[1]
-end
-
--- Button that cycles through values and stores the result in a setting.
-local function cycleButton(parent, id, x, y, width, key, values)
-    local button = make("button", id, parent, x, y, width, 22, string.upper(settings.Get(key)))
-    button:SetHandler("OnClick", function()
-        local nextValue = cycle(settings.Get(key), values)
-        settings.Update(key, nextValue)
-        button:SetText(string.upper(nextValue))
-    end)
-    return button
-end
-
 -- Textbox that writes straight to a string setting.
 local function textBox(parent, id, x, y, width, key)
     local box = make("textbox", id, parent, x, y, width, 22, settings.Get(key))
@@ -114,7 +96,7 @@ local function buildLeadSection(x, y, width)
     caption(panel, "lead_cap_keyword", x, y + 50, "Keyword")
     caption(panel, "lead_cap_channel", x + 95, y + 50, "Channel")
     textBox(panel, "lead_phrase", x, y + 72, 90, "LeadPhrase")
-    cycleButton(panel, "lead_channel", x + 95, y + 72, 90, "LeadChannel", constants.leadChannelOrder)
+    Widgets.SettingCycleButton(panel, "lead_channel", x + 95, y + 72, 90, "LeadChannel", constants.leadChannelOrder)
 
     -- restrict lead pass to the names in its list
     Widgets.Checkbox("lead_allow", panel, "Only listed names", x, y + 100, settings.Get("LeadWhitelistEnabled"), function(checked)
@@ -138,7 +120,7 @@ function Panel.OnLoad()
     -- own window below the raid window; the raid window itself is not resized or modified
     panel = make("emptywidget", "panel", root, 0, 0, dims.width, dims.mainHeight)
     Widgets.AnchorBelow(panel, root, dims.gap)
-    Widgets.AddBackground(panel, "bg", constants.folderPath .. "images/background.png", dims.width, dims.mainHeight)
+    Widgets.AddBackground(panel, "bg", dims.width, dims.mainHeight)
 
     for _, kind in ipairs({"Blacklist", "Whitelist"}) do
         editors[kind] = ListPanel.Create(root, {
@@ -160,7 +142,7 @@ function Panel.OnLoad()
     inviteList = InviteList.Create(root) -- left side of the raid window, with the + button
     sortWindow = SortWindow.Create(root) -- right side of the raid window
 
-    -- header bar (debug logging is toggled by whispering "/debug" to yourself, see raidtools.lua)
+    -- header bar
     make("label", "heading", panel, 10, 8, 300, 24, "TnT RAID TOOLS")
     Widgets.Divider(panel, "divider_header", 10, 36, dims.width - 20, 2)
 
