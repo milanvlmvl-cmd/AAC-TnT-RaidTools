@@ -5,7 +5,7 @@ local Constants = {
     addonName = "AAC-TnT-RaidTools", -- addon folder name, also the GetSettings id
     folderPath = api.baseDir .. "/AAC-TnT-RaidTools/",
     displayName = "TnT Raid Tools",
-    version = "0.2.2",
+    version = "0.3.0",
 
     -- ---- invites / lead pass -------------------------------------------------------------------
     -- Chat channel id each selection matches; "*" matches any channel id.
