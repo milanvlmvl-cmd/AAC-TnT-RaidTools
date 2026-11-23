@@ -75,6 +75,8 @@ local defaultSettings = {
     MarkPhrase = "mark",
     MarkWhitelistEnabled = false,
     MarkWhitelist = {}, -- array of names allowed to self mark
+    MarkGuildOnly = false, -- only players in your guild may self mark
+    MarkAutoHeart = false, -- keep the heart on the Songcraft healer with the most healing power in range
 }
 
 local function EnsureSettingsLoaded()

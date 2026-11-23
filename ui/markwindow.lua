@@ -3,6 +3,7 @@ local settings = require("AAC-TnT-RaidTools/core/settings")
 local Widgets = require("AAC-TnT-RaidTools/ui/widgets")
 local Authority = require("AAC-TnT-RaidTools/core/authority")
 local MarkControl = require("AAC-TnT-RaidTools/features/markcontrol")
+local AutoHeart = require("AAC-TnT-RaidTools/features/autoheart")
 
 -- Mark control window, hung below the raid sort window. Like the sort window it collapses to a
 -- header bar (title + Enabled checkbox) while the feature is off.
@@ -32,7 +33,11 @@ function MarkWindow.Create(root, above, openEditor)
         local kw = settings.Get("MarkPhrase")
         hints[1]:SetText("Raid chat, within " .. constants.marks.rangeM .. "m:")
         hints[2]:SetText(kw .. " = first free sign,  " .. kw .. " 1-9")
-        hints[3]:SetText(kw .. " x  /  " .. kw .. " star  /  " .. kw .. " heart")
+        if settings.Get("MarkAutoHeart") then
+            hints[3]:SetText(kw .. " x  /  " .. kw .. " star  (heart is automatic)")
+        else
+            hints[3]:SetText(kw .. " x  /  " .. kw .. " star  /  " .. kw .. " heart")
+        end
         hints[4]:SetText(kw .. " " .. constants.marks.clearWord .. " or same sign again = remove")
     end
     local function saveKeyword()
@@ -50,6 +55,21 @@ function MarkWindow.Create(root, above, openEditor)
     end)
     local edit = Widgets.Make("button", "marks_edit", body, x + 190, 107, 90, 24, "EDIT LIST")
     edit:SetHandler("OnClick", openEditor)
+
+    -- restrict self marking to players in your guild
+    Widgets.Checkbox("marks_guild", body, "Same guild only", x, 138, settings.Get("MarkGuildOnly"), function(checked)
+        settings.Update("MarkGuildOnly", checked)
+    end)
+
+    -- keep the heart on the Songcraft healer with the most healing power in range
+    local heartCfg = constants.marks.autoHeart
+    local autoStatus = Widgets.Make("label", "marks_auto_status", body, x + 31, 198, innerWidth - 31, 18, AutoHeart.Status())
+    Widgets.Checkbox("marks_auto_heart", body, "Auto heart (" .. heartCfg.skillset .. " healer)", x, 170,
+        settings.Get("MarkAutoHeart"), function(checked)
+            AutoHeart.SetEnabled(checked)
+            refreshHints()
+        end)
+    AutoHeart.SetListener(function(text) autoStatus:SetText(text) end)
 
     -- signs need raid lead; covers the whole window, header included
     local notice = Widgets.Overlay("marks_notice", window, dims.width, dims.height, 2)

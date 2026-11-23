@@ -69,7 +69,11 @@ The window below the raid sort window lets raid members mark themselves by typin
 | `mark heart` / `mark star` / `mark x` | Sign 10 / 11 / 12 |
 | `mark clear`, or asking again for the sign you carry | Removes your sign (the game toggles a sign off when it is applied again) |
 
-Only players within 100 m count; a player too far away to be read is ignored. Tick **Only listed names** and use **EDIT LIST** to allow only some players. Signs need raid lead, but mark control is not paused by the INVITES switch or by AFK, so it keeps working while the lead is away. Requests are sent one at a time; range, sign names and timings are in `core/constants.lua` under `marks`.
+Only players within 100 m count; a player too far away to be read is ignored. Tick **Only listed names** and use **EDIT LIST** to allow only some players, and/or **Same guild only** to allow only your guild (you always may). With both ticked, a player who is listed *or* in your guild may mark. Signs need raid lead, but mark control is not paused by the INVITES switch or by AFK, so it keeps working while the lead is away. Requests are sent one at a time; range, sign names and timings are in `core/constants.lua` under `marks`.
+
+### Auto heart
+
+Tick **Auto heart** to keep the heart (sign 10) on the healer with Songcraft who has the most healing power within 100 m. Every 5 seconds the raid is checked: a healer (same role detection as the raid sort) with the Songcraft skillset whose healing power can be read (`heal_dps` from `UnitInfo`) is a candidate. The heart only moves to someone with more than 10% more healing power than the current holder, so buffs do not bounce it around. While it is on, the heart cannot be asked for, cleared or given out as a free sign from chat. The window shows who has it and how many candidates are in range. Settings are under `marks.autoHeart` in `core/constants.lua`.
 
 ## Raid lead requirement
 
@@ -92,6 +96,8 @@ Saved under the addon folder name (`AAC-TnT-RaidTools`) using flat keys.
 | `LeadWhitelistEnabled`, `LeadWhitelist` | Restrict lead pass to a list of names |
 | `MarkEnabled`, `MarkPhrase` | Mark control switch and keyword |
 | `MarkWhitelistEnabled`, `MarkWhitelist` | Restrict self marking to a list of names |
+| `MarkGuildOnly` | Only your guild may self mark (or listed names, when that is ticked too) |
+| `MarkAutoHeart` | Keep the heart on the Songcraft healer with the most healing power in range |
 | `RaidSortEnabled` | Raid sort on/off |
 | `RaidSortStyle` | `2` = Party (default), `1` = Class |
 | `RaidSortSaveGsClass` | Save scanned gear score + class to the `players` folder |

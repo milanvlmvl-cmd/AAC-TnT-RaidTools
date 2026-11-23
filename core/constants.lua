@@ -95,6 +95,15 @@ local Constants = {
         freeOrder = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12},
         queueDelayMs = 300, -- gap between two sign sets (the Raid Info sign menu route cannot overlap)
         reserveMs = 3000, -- a sign just handed out counts as taken this long (the server applies it late)
+        -- "Auto heart": the heart goes to the healer with Songcraft who has the most healing power
+        -- (UnitInfo's statKey) within rangeM. While it is on, nobody can take or clear the heart from chat.
+        autoHeart = {
+            sign = 10, -- heart
+            skillset = "Songcraft",
+            statKey = "heal_dps", -- healing power in the UnitInfo stats table
+            scanMs = 5000, -- re-check this often
+            switchMargin = 0.10, -- move the heart only to someone with more than 10% more healing power
+        },
     },
 
     -- ---- AFK guess -----------------------------------------------------------------------------
@@ -111,7 +120,7 @@ local Constants = {
     -- Raid sort window on the right side of the raid window
     sortPanel = {width = 300, height = 252, headerHeight = 36, gap = 4},
     -- Mark control window, below the raid sort window
-    markPanel = {width = 300, height = 182, headerHeight = 36, gap = 4},
+    markPanel = {width = 300, height = 262, headerHeight = 36, gap = 4},
     -- Invite list window on the left side of the raid window: a header, then a scrolling stack of invite cards.
     -- A card is a header row (collapse checkbox, title, X) plus a body that is hidden when collapsed.
     invitePanel = {

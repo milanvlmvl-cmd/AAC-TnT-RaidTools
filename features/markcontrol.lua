@@ -6,6 +6,7 @@ local Guard = require("AAC-TnT-RaidTools/core/guard")
 local Notify = require("AAC-TnT-RaidTools/core/notify")
 local Authority = require("AAC-TnT-RaidTools/core/authority")
 local Marks = require("AAC-TnT-RaidTools/features/raidmarks")
+local Roles = require("AAC-TnT-RaidTools/features/roles")
 
 -- Self marking: a raid member says the keyword in raid chat and gets an overhead sign
 -- (see constants.marks for the forms). Asking again for the sign you carry, or "<keyword> clear",
@@ -68,6 +69,20 @@ local function inRange(key, slot)
     return type(distance) == "number" and distance <= cfg.rangeM
 end
 
+-- Who may self mark. Each ticked restriction is a way in: with both ticked, being listed OR in your
+-- guild is enough; with neither, everyone may. listed() / inGuild() are only called when needed.
+function MarkControl.Allowed(listOnly, guildOnly, listed, inGuild)
+    if not listOnly and not guildOnly then return true end
+    return (listOnly and listed()) or (guildOnly and inGuild()) or false
+end
+
+-- In your guild. Nobody matches while you have no guild, or when their guild cannot be read.
+local function sameGuild(key, slot)
+    if isMe(key) then return true end
+    local mine = Roles.ReadGuild("player")
+    return mine ~= nil and Roles.ReadGuild("team" .. slot) == mine
+end
+
 local function dropReservations(key)
     for sign, entry in pairs(reserved) do
         if entry.key == key then reserved[sign] = nil end
@@ -108,19 +123,26 @@ function MarkControl.HandleChat(channelId, speakerName, message)
     if request == nil then return end
     local key = Matching.normalizeName(speakerName)
     if key == "" then return end
-    if settings.Get("MarkWhitelistEnabled") and not Matching.lookup(settings.Get("MarkWhitelist"))[key] then return end
     local slot = Marks.Slot(speakerName)
     if slot == nil or not inRange(key, slot) then return end
+    if not MarkControl.Allowed(settings.Get("MarkWhitelistEnabled"), settings.Get("MarkGuildOnly"),
+        function() return Matching.lookup(settings.Get("MarkWhitelist"))[key] == true end,
+        function() return sameGuild(key, slot) end) then
+        return
+    end
     if not Authority.IsLead() then return end
 
     local pending = queuedFor(key)
     local current = Marks.Get(speakerName)
+    -- "Auto heart" owns the heart: it cannot be asked for, cleared or handed out as a free sign
+    local heart = settings.Get("MarkAutoHeart") and cfg.autoHeart.sign or nil
+    if request == heart then return end
 
     if request == "clear" then
         -- a sign still waiting in the queue is simply taken back; otherwise remove the one they carry
         if pending and not pending.clear then
             cancelQueued(key)
-        elseif current ~= nil then
+        elseif current ~= nil and current ~= heart then
             enqueue(speakerName, key, current, true)
         end
         return
@@ -129,7 +151,7 @@ function MarkControl.HandleChat(channelId, speakerName, message)
     if request == "free" then
         if current ~= nil or hasReservation(key) then return end -- already marked
         local sign = MarkControl.PickFree(cfg.freeOrder, function(s)
-            return reservation(s) ~= nil or not Marks.IsFree(s)
+            return s == heart or reservation(s) ~= nil or not Marks.IsFree(s)
         end)
         if sign == nil then return end -- all 12 signs in use
         enqueue(speakerName, key, sign)
@@ -177,6 +199,18 @@ function MarkControl.Update(dt)
         reserved[job.sign] = nil
         Notify.Chat(label .. " for " .. job.name .. " failed: " .. tostring(ok and why or done))
     end
+end
+
+-- Queue `sign` for `name` from code (Auto heart), through the same one-at-a-time queue as chat requests.
+function MarkControl.Assign(name, sign)
+    local key = Matching.normalizeName(name)
+    if key == "" then return end
+    enqueue(name, key, sign)
+end
+
+-- true while `sign` was handed out a moment ago (queued, or sent but maybe not on the server yet).
+function MarkControl.Pending(sign)
+    return reservation(sign) ~= nil
 end
 
 -- Enabled checkbox: drop anything still waiting when switched off.

@@ -7,6 +7,7 @@ local InviteList = require("AAC-TnT-RaidTools/ui/invitelist")
 local MarkWindow = require("AAC-TnT-RaidTools/ui/markwindow")
 local Authority = require("AAC-TnT-RaidTools/core/authority")
 local AfkWatch = require("AAC-TnT-RaidTools/features/afkwatch")
+local AutoHeart = require("AAC-TnT-RaidTools/features/autoheart")
 
 local Panel = {}
 
@@ -169,6 +170,7 @@ end
 function Panel.OnUnload()
     Authority.Reset() -- drop the window listeners before the widgets are freed
     AfkWatch.SetListener(nil)
+    AutoHeart.SetListener(nil)
     Widgets.FreeAll()
     afkLabel = nil
     panel = nil

@@ -104,6 +104,35 @@ function Roles.ToGearScore(value)
     return number
 end
 
+-- The unit's guild name (unit info `expeditionName`), or nil when they have none or it cannot be read.
+function Roles.ReadGuild(unit)
+    local unitId = safe("GetUnitId", function() return api.Unit:GetUnitId(unit) end)
+    if unitId == nil then return nil end
+    local info = safe("GetUnitInfoById", function() return api.Unit:GetUnitInfoById(unitId) end)
+    local guild = type(info) == "table" and info.expeditionName or nil
+    if type(guild) ~= "string" or guild == "" then return nil end
+    return guild
+end
+
+-- Whether one of the skillset ids is the skillset players call `wanted` (e.g. "Songcraft").
+function Roles.HasSkillset(ids, wanted)
+    wanted = wanted:lower()
+    for _, id in ipairs(ids or {}) do
+        local name = Roles.SkillsetName(id)
+        if name ~= nil and name:lower() == wanted then return true end
+    end
+    return false
+end
+
+-- A stat from the unit's UnitInfo table (e.g. "heal_dps", healing power) as a positive number,
+-- or nil when it cannot be read (out of range).
+function Roles.ReadStat(unit, key)
+    local info = safe("UnitInfo", function() return api.Unit:UnitInfo(unit) end)
+    local value = type(info) == "table" and tonumber(info[key]) or nil
+    if value == nil or value <= 0 then return nil end
+    return value
+end
+
 function Roles.ReadGearScore(unit)
     return Roles.ToGearScore(safe("UnitGearScore", function() return api.Unit:UnitGearScore(unit) end))
 end

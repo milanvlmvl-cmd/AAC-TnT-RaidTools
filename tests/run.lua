@@ -412,14 +412,71 @@ do
     holders = {}
     equal(run({"Ann", "mark 4"}, {"Bob", "mark 5"}), "set Bob 5", "only listed names")
     settings.Update("MarkWhitelistEnabled", false)
+
+    -- same guild only (every stubbed speaker sits in slot 2, so "team2" carries their guild)
+    local myGuild, theirGuild = "TnT", "TnT"
+    api.Unit.GetUnitId = function(_, unit) return unit end
+    api.Unit.GetUnitInfoById = function(_, id)
+        if id == "player" then return {expeditionName = myGuild} end
+        return {expeditionName = theirGuild}
+    end
+    settings.Update("MarkGuildOnly", true)
+    holders = {}
+    equal(run({"Ann", "mark 4"}), "set Ann 4", "guild only: same guild may mark")
+    theirGuild = "Other"
+    holders = {}
+    equal(run({"Ann", "mark 4"}), "", "guild only: other guild is ignored")
+    theirGuild = nil
+    equal(run({"Ann", "mark 4"}), "", "guild only: no guild is ignored")
+    myGuild, theirGuild = nil, nil
+    equal(run({"Ann", "mark 4"}), "", "guild only: nobody matches while you have no guild")
+    equal(run({"Lead", "mark 4"}), "set Lead 4", "guild only: you always may")
+    myGuild, theirGuild = "TnT", "Other"
+    settings.Update("MarkWhitelistEnabled", true) -- MarkWhitelist is still {"Bob"}
+    holders = {}
+    equal(run({"Ann", "mark 4"}, {"Bob", "mark 5"}), "set Bob 5", "guild + list: listed outsider may mark")
+    theirGuild = "TnT"
+    holders = {}
+    equal(run({"Ann", "mark 4"}), "set Ann 4", "guild + list: unlisted guild member may mark")
+    settings.Update("MarkGuildOnly", false)
+    settings.Update("MarkWhitelistEnabled", false)
+
+    check(MarkControl.Allowed(false, false, function() return false end, function() return false end), "no restriction allows all")
+    check(not MarkControl.Allowed(true, false, function() return false end, function() return true end), "list only ignores guild")
+    check(not MarkControl.Allowed(false, true, function() return true end, function() return false end), "guild only ignores list")
     holders = {}
     MarkControl.Reset()
     sent = {}
     MarkControl.HandleChat(constants.channels.guild, "Ann", "mark 4")
     MarkControl.Update(1000)
     equal(#sent, 0, "guild chat is ignored")
+    -- Auto heart owns the heart: chat cannot take it, clear it, or get it as a free sign
+    settings.Update("MarkAutoHeart", true)
+    holders = {}
+    equal(run({"Ann", "mark heart"}), "", "auto heart: heart cannot be asked for")
+    holders = {ann = 10}
+    equal(run({"Ann", "mark clear"}), "", "auto heart: heart cannot be cleared")
+    holders = {a = 1, b = 2, c = 3, d = 4, e = 5, f = 6, g = 7, h = 8, i = 9}
+    equal(run({"Ann", "mark"}), "set Ann 11", "auto heart: free pick skips the heart")
+    holders = {}
+    equal(run({"Ann", "mark star"}), "set Ann 11", "auto heart: other signs still work")
+    settings.Update("MarkAutoHeart", false)
+
     settings.Update("MarkEnabled", false)
     equal(run({"Ann", "mark 4"}), "", "disabled does nothing")
+
+    local AutoHeart = require("AAC-TnT-RaidTools/features/autoheart")
+    local function c(name, heal) return {name = name, key = name:lower(), heal = heal} end
+    local function pickName(list, holderKey)
+        local pick = AutoHeart.Pick(list, holderKey, 0.10)
+        return pick and pick.name or nil
+    end
+    equal(pickName({}, nil), nil, "auto heart: nobody to pick")
+    equal(pickName({c("Ann", 800), c("Bob", 1200)}, nil), "Bob", "auto heart: highest healing power wins")
+    equal(pickName({c("Ann", 800), c("Bob", 1200)}, "bob"), nil, "auto heart: best already holds it")
+    equal(pickName({c("Ann", 1100), c("Bob", 1050)}, "bob"), nil, "auto heart: within the margin the holder keeps it")
+    equal(pickName({c("Ann", 1200), c("Bob", 1050)}, "bob"), "Ann", "auto heart: more than the margin moves it")
+    equal(pickName({c("Ann", 900)}, "zed"), "Ann", "auto heart: holder not a candidate loses it")
 end
 
 print(string.format("%d passed, %d failed", passed, failed))
