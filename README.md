@@ -1,12 +1,13 @@
 # TnT Raid Tools
 
-An ArcheAge Classic addon that helps the raid leader run a raid from the raid manager window. It has three tools:
+An ArcheAge Classic addon that helps the raid leader run a raid from the raid manager window. It has four tools:
 
 1. **Auto invites** - invite anyone who types a keyword in chat.
 2. **Lead pass** - hand raid lead to whoever types a keyword.
 3. **Raid sort** - keep the raid ordered into tank / healer / other groups by gear score.
+4. **Mark control** - raid members give themselves an overhead sign from raid chat.
 
-Everything is built into the raid manager: a settings panel under the raid window, an invite list on its left, and the raid sort window on its right. The raid window itself is never resized or changed. Opening the addon's settings button shows the panel.
+Everything is built into the raid manager: a settings panel under the raid window, an invite list on its left, and the raid sort and mark control windows on its right. The raid window itself is never resized or changed. Opening the addon's settings button shows the panel.
 
 ## Auto invites
 
@@ -57,6 +58,19 @@ The **Sort style** button switches between two layouts:
 
 Slot layout and timings (settle time, retries, move limits) are all in `core/constants.lua` under `raidSort`.
 
+## Mark control
+
+The window below the raid sort window lets raid members mark themselves by typing the keyword (default `mark`) in raid chat:
+
+| Message | Sign |
+| --- | --- |
+| `mark` | First free sign (1 to 12); nothing happens if they already carry one |
+| `mark 1` .. `mark 9` | That sign |
+| `mark heart` / `mark star` / `mark x` | Sign 10 / 11 / 12 |
+| `mark clear`, or asking again for the sign you carry | Removes your sign (the game toggles a sign off when it is applied again) |
+
+Only players within 100 m count; a player too far away to be read is ignored. Tick **Only listed names** and use **EDIT LIST** to allow only some players. Signs need raid lead, but mark control is not paused by the INVITES switch or by AFK, so it keeps working while the lead is away. Requests are sent one at a time; range, sign names and timings are in `core/constants.lua` under `marks`.
+
 ## Raid lead requirement
 
 Auto invites and raid sort both need raid lead, so they pause (your settings are untouched) while you are in a raid of 2 or more without lead, and resume when you get it. Alone you are always allowed, since inviting someone is what makes you leader. The raid sort window shows a notice when it is paused, and a chat message is written when the state changes.
@@ -76,6 +90,8 @@ Saved under the addon folder name (`AAC-TnT-RaidTools`) using flat keys.
 | `BlacklistPublic`, `BlacklistPrivate`, `WhitelistPublic`, `WhitelistPrivate` | The shared name lists |
 | `LeadEnabled`, `LeadPhrase`, `LeadChannel` | Lead pass switch, keyword and channel |
 | `LeadWhitelistEnabled`, `LeadWhitelist` | Restrict lead pass to a list of names |
+| `MarkEnabled`, `MarkPhrase` | Mark control switch and keyword |
+| `MarkWhitelistEnabled`, `MarkWhitelist` | Restrict self marking to a list of names |
 | `RaidSortEnabled` | Raid sort on/off |
 | `RaidSortStyle` | `2` = Party (default), `1` = Class |
 | `RaidSortSaveGsClass` | Save scanned gear score + class to the `players` folder |

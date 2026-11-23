@@ -1,10 +1,10 @@
 local constants = require("AAC-TnT-RaidTools/core/constants")
 local settings = require("AAC-TnT-RaidTools/core/settings")
-local raidtools = require("AAC-TnT-RaidTools/features/raidtools")
 local Widgets = require("AAC-TnT-RaidTools/ui/widgets")
 local ListPanel = require("AAC-TnT-RaidTools/ui/listpanel")
 local SortWindow = require("AAC-TnT-RaidTools/ui/sortwindow")
 local InviteList = require("AAC-TnT-RaidTools/ui/invitelist")
+local MarkWindow = require("AAC-TnT-RaidTools/ui/markwindow")
 local Authority = require("AAC-TnT-RaidTools/core/authority")
 local AfkWatch = require("AAC-TnT-RaidTools/features/afkwatch")
 
@@ -13,7 +13,7 @@ local Panel = {}
 local panel -- main panel under the raid window
 local sortWindow
 local inviteList -- left of the raid window
-local editors = {} -- ["Blacklist"] / ["Whitelist"] / ["Lead"] -> ListPanel
+local editors = {} -- ["Blacklist"] / ["Whitelist"] / ["Lead"] / ["Mark"] -> ListPanel
 local make = Widgets.Make
 
 -- Textbox that writes straight to a string setting.
@@ -112,7 +112,7 @@ end
 function Panel.OnLoad()
     local root = ADDON:GetContent(UIC.RAID_MANAGER)
     if root == nil then
-        raidtools.Log("Raid manager content was unavailable.")
+        error("Raid manager content was unavailable.") -- main.lua's pcall logs it
         return
     end
     local dims = constants.panel
@@ -139,8 +139,17 @@ function Panel.OnLoad()
         hint = "When \"Only listed names\" is ticked, only these players can take lead.",
     })
 
+    editors.Mark = ListPanel.Create(root, {
+        id = "mark", title = "MARK CONTROL  -  allowed names", settingKey = "MarkWhitelist", onClose = Panel.Show,
+        hint = "When \"Only listed names\" is ticked, only these players can mark themselves.",
+    })
+
     inviteList = InviteList.Create(root) -- left side of the raid window, with the + button
     sortWindow = SortWindow.Create(root) -- right side of the raid window
+    MarkWindow.Create(root, sortWindow.Window, function() -- below the raid sort window
+        panel:Show(false)
+        editors.Mark.Open()
+    end)
 
     -- header bar
     make("label", "heading", panel, 10, 8, 300, 24, "TnT RAID TOOLS")

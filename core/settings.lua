@@ -68,6 +68,13 @@ local defaultSettings = {
     LeadEnabled = false,
     LeadWhitelistEnabled = false,
     LeadWhitelist = {}, -- array of names allowed to take lead (old comma string migrates on load)
+
+    -- Mark control: raid members give themselves an overhead sign from raid chat (see constants.marks).
+    -- Not paused by the INVITES switch or by AFK, so it keeps working while the lead is away.
+    MarkEnabled = false,
+    MarkPhrase = "mark",
+    MarkWhitelistEnabled = false,
+    MarkWhitelist = {}, -- array of names allowed to self mark
 }
 
 local function EnsureSettingsLoaded()

@@ -113,7 +113,7 @@ function SortWindow.Create(root)
     end)
     applyEnabled(settings.Get("RaidSortEnabled"))
     pcall(Authority.CanManage) -- first look at the lead state so the notice is right from the start
-    return {RefreshNotice = refreshNotice}
+    return {RefreshNotice = refreshNotice, Window = window}
 end
 
 return SortWindow

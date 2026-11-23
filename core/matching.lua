@@ -41,6 +41,21 @@ function Matching.matchesPhrase(message, phrase, mode)
     return message:find(phrase, 1, true) ~= nil
 end
 
+-- A self-mark request "<keyword>" or "<keyword> <arg>" (case and outer spaces ignored).
+-- Returns "free" for the bare keyword, "clear" for constants.marks.clearWord, the sign for
+-- "1".."9" or a name in constants.marks.named, else nil (not a request, or an unknown argument).
+function Matching.parseMarkRequest(message, keyword)
+    message, keyword = Matching.normalizeName(message), Matching.normalizeName(keyword)
+    if keyword == "" or message:sub(1, #keyword) ~= keyword then return nil end
+    local rest = message:sub(#keyword + 1)
+    if rest == "" then return "free" end
+    local arg = rest:match("^%s+(%S+)$") -- whole word: "markus" is not "mark"
+    if arg == nil then return nil end
+    if arg:match("^[1-9]$") then return tonumber(arg) end
+    if arg == constants.marks.clearWord then return "clear" end
+    return constants.marks.named[arg]
+end
+
 -- selection is a key of constants.channels. "all" ("*") matches any channel id; the others
 -- must equal the numeric channel id the chat event carries.
 function Matching.channelAllowed(channelId, selection)

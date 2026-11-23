@@ -1,10 +1,12 @@
 -- TnT Raid Tools Main Module
+local api = require("api")
 local constants = require("AAC-TnT-RaidTools/core/constants")
 local settings = require("AAC-TnT-RaidTools/core/settings")
 local Ticker = require("AAC-TnT-RaidTools/core/ticker")
 local raidtools = require("AAC-TnT-RaidTools/features/raidtools")
 local raidsort = require("AAC-TnT-RaidTools/features/raidsort")
 local AfkWatch = require("AAC-TnT-RaidTools/features/afkwatch")
+local MarkControl = require("AAC-TnT-RaidTools/features/markcontrol")
 local panel = require("AAC-TnT-RaidTools/ui/panel")
 
 local TnTRaidTools = {
@@ -14,16 +16,23 @@ local TnTRaidTools = {
     desc = "Raid invites and lead handoff tools"
 }
 
+local function log(text)
+    pcall(function() api.Log:Info("[" .. constants.displayName .. "] " .. text) end)
+end
+
 function TnTRaidTools.OnLoad()
     settings.Reset()
     AfkWatch.Reset()
+    MarkControl.Reset()
     raidtools.OnLoad()
     raidsort.OnLoad()
-    -- one UPDATE callback for the whole addon: the AFK watch first, then the raid sort
+    -- one UPDATE callback for the whole addon: the AFK watch first, then the raid sort, then the mark queue
     Ticker.Add(AfkWatch.Update)
     Ticker.Add(raidsort.Update)
+    Ticker.Add(MarkControl.Update)
     Ticker.Start()
-    pcall(panel.OnLoad)
+    local ok, err = pcall(panel.OnLoad)
+    if not ok then log("panel failed: " .. tostring(err)) end
 end
 
 function TnTRaidTools.OnUnload()
@@ -31,6 +40,7 @@ function TnTRaidTools.OnUnload()
     raidsort.OnUnload()
     raidtools.OnUnload()
     panel.OnUnload()
+    MarkControl.Reset()
     AfkWatch.Reset()
     settings.Reset()
 end

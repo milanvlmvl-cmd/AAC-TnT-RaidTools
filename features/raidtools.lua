@@ -3,8 +3,9 @@ local Matching = require("AAC-TnT-RaidTools/core/matching")
 local settings = require("AAC-TnT-RaidTools/core/settings")
 local Authority = require("AAC-TnT-RaidTools/core/authority")
 local AfkWatch = require("AAC-TnT-RaidTools/features/afkwatch")
+local MarkControl = require("AAC-TnT-RaidTools/features/markcontrol")
 
--- Chat-driven tools: auto invites and lead pass.
+-- Chat-driven tools: auto invites, lead pass and self marks.
 local RaidTools = {}
 
 local live = false
@@ -69,6 +70,8 @@ local function onChat(...)
     local channelId, _, _, speakerName, message = ...
     if not live then return end
     if not speakerName or type(message) ~= "string" then return end
+    -- self marks first: not paused by AFK or the INVITES switch, and never takes the message
+    pcall(MarkControl.HandleChat, channelId, speakerName, message)
     if handleInvites(channelId, speakerName, message) then return end
     handleLeadPass(channelId, speakerName, message)
 end

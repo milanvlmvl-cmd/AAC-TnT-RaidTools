@@ -82,6 +82,21 @@ local Constants = {
         playersFolder = "AAC-TnT-RaidTools/players",
     },
 
+    -- ---- mark control (self marking from raid chat) ------------------------------------------
+    -- "<keyword>" gives the first free sign in freeOrder, "<keyword> 1".."<keyword> 9" that sign,
+    -- and "<keyword> <word>" the sign in `named`. Asking for the sign you already carry, or
+    -- "<keyword> <clearWord>", removes your sign. Only raid chat, only speakers within rangeM meters.
+    marks = {
+        channel = "raid", -- key of `channels`
+        rangeM = 100,
+        named = {x = 12, star = 11, heart = 10},
+        clearWord = "clear",
+        signNames = {[10] = "Heart", [11] = "Star", [12] = "X"}, -- for log lines; others print their number
+        freeOrder = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12},
+        queueDelayMs = 300, -- gap between two sign sets (the Raid Info sign menu route cannot overlap)
+        reserveMs = 3000, -- a sign just handed out counts as taken this long (the server applies it late)
+    },
+
     -- ---- AFK guess -----------------------------------------------------------------------------
     -- The game exposes no AFK flag, so you count as AFK when your world position stays put.
     -- Every intervalMs your position is compared with the previous one; staying within `tolerance` on
@@ -95,6 +110,8 @@ local Constants = {
     panel = {width = 600, mainHeight = 228, editorHeight = 360, gap = 4},
     -- Raid sort window on the right side of the raid window
     sortPanel = {width = 300, height = 252, headerHeight = 36, gap = 4},
+    -- Mark control window, below the raid sort window
+    markPanel = {width = 300, height = 182, headerHeight = 36, gap = 4},
     -- Invite list window on the left side of the raid window: a header, then a scrolling stack of invite cards.
     -- A card is a header row (collapse checkbox, title, X) plus a body that is hidden when collapsed.
     invitePanel = {

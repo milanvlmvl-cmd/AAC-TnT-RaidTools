@@ -309,5 +309,118 @@ do
     equal(from, nil, "a sorted raid needs no move")
 end
 
+-- ---------------------------------------------------------------------------------------------
+-- Mark control
+-- ---------------------------------------------------------------------------------------------
+do
+    local parse = Matching.parseMarkRequest
+    equal(parse("mark", "mark"), "free", "bare keyword asks for a free sign")
+    equal(parse("  MARK  ", "mark"), "free", "keyword ignores case and outer spaces")
+    equal(parse("mark 4", "mark"), 4, "keyword + digit picks that sign")
+    equal(parse("mark 1", "mark"), 1, "lowest digit sign")
+    equal(parse("mark 9", "mark"), 9, "highest digit sign")
+    equal(parse("mark   7", "mark"), 7, "several spaces before the argument")
+    equal(parse("mark x", "mark"), 12, "x is sign 12")
+    equal(parse("Mark STAR", "mark"), 11, "star is sign 11")
+    equal(parse("mark heart", "mark"), 10, "heart is sign 10")
+    equal(parse("mark 0", "mark"), nil, "0 is not a sign")
+    equal(parse("mark 10", "mark"), nil, "two digits are ignored")
+    equal(parse("mark foo", "mark"), nil, "unknown word is ignored")
+    equal(parse("mark 4 please", "mark"), nil, "extra words are ignored")
+    equal(parse("markus", "mark"), nil, "keyword must be a whole word")
+    equal(parse("please mark", "mark"), nil, "keyword must start the message")
+    equal(parse("sign 3", "Sign"), 3, "custom keyword")
+    equal(parse("mark", ""), nil, "empty keyword never matches")
+    equal(parse(nil, "mark"), nil, "nil message")
+
+    local MarkControl = require("AAC-TnT-RaidTools/features/markcontrol")
+    local order = constants.marks.freeOrder
+    local function takenSet(list)
+        local set = {}
+        for _, sign in ipairs(list) do set[sign] = true end
+        return function(sign) return set[sign] == true end
+    end
+    equal(MarkControl.PickFree(order, takenSet({})), 1, "free pick starts at sign 1")
+    equal(MarkControl.PickFree(order, takenSet({1, 2, 4})), 3, "free pick skips taken signs")
+    equal(MarkControl.PickFree(order, takenSet({1, 2, 3, 4, 5, 6, 7, 8, 9})), 10, "free pick moves on to heart after 9")
+    equal(MarkControl.PickFree(order, takenSet(order)), nil, "no free sign when all 12 are taken")
+
+    equal(parse("mark clear", "mark"), "clear", "clear word")
+    equal(parse("MARK Clear", "mark"), "clear", "clear word ignores case")
+
+    -- HandleChat + Update against a stubbed game: who holds which sign, and what was sent
+    local api = require("api")
+    local Marks = require("AAC-TnT-RaidTools/features/raidmarks")
+    local Authority = require("AAC-TnT-RaidTools/core/authority")
+    local holders = {} -- lowercase name -> sign
+    local sent = {} -- "set Ann 4" / "clear Ann 4"
+    api.Unit = {
+        UnitName = function(_, unit) if unit == "player" then return "Lead" end end,
+        UnitDistance = function() return 10 end,
+    }
+    Marks.Slot = function() return 2 end
+    Marks.Get = function(name) return holders[name:lower()] end
+    Marks.IsFree = function(sign)
+        for _, s in pairs(holders) do if s == sign then return false end end
+        return true
+    end
+    Marks.Set = function(name, sign) sent[#sent + 1] = "set " .. name .. " " .. sign; holders[name:lower()] = sign; return true end
+    Marks.Clear = function(name, sign) sent[#sent + 1] = "clear " .. name .. " " .. sign; holders[name:lower()] = nil; return true end
+    Authority.IsLead = function() return true end
+    settings.Update("MarkEnabled", true)
+    local RAID = constants.channels.raid
+    local function run(...)
+        MarkControl.Reset()
+        sent = {}
+        for _, line in ipairs({...}) do MarkControl.HandleChat(RAID, line[1], line[2]) end
+        for _ = 1, 20 do MarkControl.Update(constants.marks.queueDelayMs) end
+        return table.concat(sent, ", ")
+    end
+
+    holders = {}
+    equal(run({"Ann", "mark 4"}), "set Ann 4", "numbered request sets the sign")
+    holders = {ann = 4}
+    equal(run({"Ann", "mark 4"}), "clear Ann 4", "asking for the sign you carry clears it")
+    holders = {ann = 11}
+    equal(run({"Ann", "mark star"}), "clear Ann 11", "named sign you carry clears it")
+    holders = {ann = 4}
+    equal(run({"Ann", "mark 5"}), "set Ann 5", "a different sign replaces yours")
+    holders = {ann = 4}
+    equal(run({"Ann", "mark clear"}), "clear Ann 4", "clear word removes your sign")
+    holders = {}
+    equal(run({"Ann", "mark clear"}), "", "clear without a sign does nothing")
+    holders = {}
+    equal(run({"Ann", "mark 4"}, {"Ann", "mark 4"}), "", "same sign twice before it is sent cancels it")
+    holders = {}
+    equal(run({"Ann", "mark 4"}, {"Ann", "mark clear"}), "", "clear before it is sent cancels it")
+    holders = {ann = 4}
+    equal(run({"Ann", "mark 4"}, {"Ann", "mark 4"}), "", "clear asked twice before it is sent cancels it")
+    holders = {bob = 1}
+    equal(run({"Ann", "mark"}, {"Cy", "mark"}), "set Ann 2, set Cy 3", "free requests skip held and just given signs")
+    holders = {ann = 4}
+    equal(run({"Ann", "mark"}), "", "free request while marked does nothing")
+    holders = {}
+    equal(run({"Ann", "mark"}, {"Ann", "mark clear"}), "", "free request taken back by clear")
+    api.Unit.UnitDistance = function() return 150 end
+    holders = {}
+    equal(run({"Ann", "mark 4"}), "", "out of range is ignored")
+    equal(run({"Lead", "mark 4"}), "set Lead 4", "you are always in range")
+    api.Unit.UnitDistance = function() return 10 end
+    equal(run({"Ann", "mark 4"}), "set Ann 4", "back in range")
+    settings.Update("MarkWhitelistEnabled", true)
+    settings.Update("MarkWhitelist", {"Bob"})
+    holders = {}
+    equal(run({"Ann", "mark 4"}, {"Bob", "mark 5"}), "set Bob 5", "only listed names")
+    settings.Update("MarkWhitelistEnabled", false)
+    holders = {}
+    MarkControl.Reset()
+    sent = {}
+    MarkControl.HandleChat(constants.channels.guild, "Ann", "mark 4")
+    MarkControl.Update(1000)
+    equal(#sent, 0, "guild chat is ignored")
+    settings.Update("MarkEnabled", false)
+    equal(run({"Ann", "mark 4"}), "", "disabled does nothing")
+end
+
 print(string.format("%d passed, %d failed", passed, failed))
 os.exit(failed == 0 and 0 or 1)
